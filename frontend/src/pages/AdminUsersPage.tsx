@@ -68,7 +68,7 @@ const AdminUsersPage: React.FC = () => {
       key: 'role',
       render: (role: string) => {
         const color = role === 'Owner' ? 'volcano' : 'geekblue';
-        return <Tag color={color}>{role.toUpperCase()}</Tag>;
+        return <Tag color={color}>{role.name.toUpperCase()}</Tag>;
       },
       filters: [
         { text: 'Owner', value: 'Owner' },

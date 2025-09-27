@@ -38,67 +38,75 @@ const LoginPage: React.FC = () => {
   };
 
   return (
-    // Use MUI Container for centering and max width
-    <Container component="main" maxWidth="xs" style={{ paddingTop: '10vh' }}>
-      <div style={{ textAlign: 'center', marginBottom: 24 }}>
-        <Typography component="h1" variant="h4" color="primary" gutterBottom>
-          Alluring Lens Studios
-        </Typography>
-        <Typography component="h2" variant="h5">
-          Sign In
-        </Typography>
+    <div style={{ display: 'flex', minHeight: '100vh' }}>
+      {/* Left side image */}
+      <div style={{ flex: 1, background: '#f5f5f5', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <img src="/assets/login-photo.jpg" alt="Login Visual" style={{ maxWidth: '80%', maxHeight: '80%', borderRadius: 16 }} />
       </div>
-
-      {/* Ant Design Card for the modern container look */}
-      <Card style={{ padding: 20, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
-        <Form
-          name="login_form"
-          initialValues={{ remember: true }}
-          onFinish={onFinish}
-          layout="vertical"
-        >
-          {/* Username/Email Field */}
-          <Form.Item
-            name="username" // Maps to LoginRequest 'username'
-            rules={[{ required: true, message: 'Please input your Username or Email!' }]}
-          >
-            <Input
-              prefix={<MailOutlined className="site-form-item-icon" />}
-              placeholder="Username or Email"
-              size="large"
-            />
-          </Form.Item>
-
-          {/* Password Field */}
-          <Form.Item
-            name="password" // Maps to LoginRequest 'password'
-            rules={[{ required: true, message: 'Please input your Password!' }]}
-          >
-            <Input.Password
-              prefix={<LockOutlined className="site-form-item-icon" />}
-              placeholder="Password"
-              size="large"
-            />
-          </Form.Item>
-
-          {/* Submit Button (using MUI Button for styling) */}
-          <Form.Item style={{ marginTop: 32 }}>
-            <Button
-              type="submit"
-              fullWidth
-              variant="contained"
-              color="primary"
-              size="large"
-              loading={loading}
-              onClick={() => { /* Manually trigger AntD form submit */ }}
+      {/* Right side login form */}
+      <Container component="main" maxWidth="xs" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 0 }}>
+        <div style={{ width: '100%' }}>
+          <div style={{ textAlign: 'center', marginBottom: 24 }}>
+            <Typography component="h1" variant="h4" color="primary" gutterBottom>
+              Alluring Lens Studios
+            </Typography>
+            <Typography component="h2" variant="h5">
+              Sign In
+            </Typography>
+          </div>
+          <Card style={{ padding: 20, boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+            <Form
+              name="login_form"
+              initialValues={{ remember: true }}
+              onFinish={onFinish}
+              layout="vertical"
             >
-              {loading ? 'Logging in...' : 'Log In'}
-            </Button>
-          </Form.Item>
-        </Form>
-      </Card>
-      
-    </Container>
+              {/* Username/Email Field */}
+              <Form.Item
+                name="username"
+                rules={[{ required: true, message: 'Please input your Username or Email!' }]}
+              >
+                <Input
+                  prefix={<MailOutlined className="site-form-item-icon" />}
+                  placeholder="Username or Email"
+                  size="large"
+                />
+              </Form.Item>
+              {/* Password Field */}
+              <Form.Item
+                name="password"
+                rules={[{ required: true, message: 'Please input your Password!' }]}
+              >
+                <Input.Password
+                  prefix={<LockOutlined className="site-form-item-icon" />}
+                  placeholder="Password"
+                  size="large"
+                />
+              </Form.Item>
+              {/* Submit Button */}
+              <Form.Item style={{ marginTop: 32 }}>
+                <Button
+                  type="submit"
+                  fullWidth
+                  variant="contained"
+                  color="primary"
+                  size="large"
+                  loading={loading}
+                  onClick={() => {}}
+                >
+                  {loading ? 'Logging in...' : 'Log In'}
+                </Button>
+              </Form.Item>
+            </Form>
+            <div style={{ textAlign: 'center', marginTop: 16 }}>
+              <Link to="/forgot-password" style={{ color: '#1976d2', textDecoration: 'underline' }}>
+                Forgot password?
+              </Link>
+            </div>
+          </Card>
+        </div>
+      </Container>
+    </div>
   );
 };
 

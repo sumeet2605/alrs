@@ -4,6 +4,8 @@ import { HomeOutlined, UserOutlined, SettingOutlined, LogoutOutlined } from '@an
 import { Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import Typography from '@mui/material/Typography';
+import { Avatar, Dropdown, Menu as AntMenu } from 'antd';
+import { DownOutlined } from '@ant-design/icons';
 
 const { Header, Content, Sider } = Layout;
 
@@ -76,9 +78,30 @@ const DefaultLayout: React.FC = () => {
                     {/* Display current path title */}
                     {menuItems.find(item => item.key === location.pathname)?.label || 'Dashboard'}
                 </Typography>
-                <Typography variant="body1">
-                    Welcome, {userRole || 'Client'}
-                </Typography>
+                {/* User Icon and Dropdown */}
+                <Dropdown
+                  overlay={
+                    <AntMenu>
+                      <AntMenu.Item key="profile" disabled>
+                        <Avatar src={null} icon={<UserOutlined />} style={{ marginRight: 8 }} />
+                        {userRole || 'Client'}
+                      </AntMenu.Item>
+                      <AntMenu.Divider />
+                      <AntMenu.Item key="change-password" onClick={() => navigate('/change-password')}>
+                        Change Password
+                      </AntMenu.Item>
+                      <AntMenu.Item key="logout" onClick={handleLogout} danger>
+                        Logout
+                      </AntMenu.Item>
+                    </AntMenu>
+                  }
+                  trigger={["click"]}
+                >
+                  <span style={{ cursor: "pointer", display: "flex", alignItems: "center" }}>
+                    <Avatar src={null} icon={<UserOutlined />} style={{ marginRight: 8 }} />
+                    <DownOutlined />
+                  </span>
+                </Dropdown>
             </div>
         </Header>
         

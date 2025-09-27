@@ -8,9 +8,11 @@ export { OpenAPI } from './core/OpenAPI';
 export type { OpenAPIConfig } from './core/OpenAPI';
 
 export type { Body_user_login_api_login_post } from './models/Body_user_login_api_login_post';
+export type { ChangePasswordRequest } from './models/ChangePasswordRequest';
 export type { HTTPValidationError } from './models/HTTPValidationError';
 export type { PermissionBulkCreate } from './models/PermissionBulkCreate';
 export type { RoleBulkCreate } from './models/RoleBulkCreate';
+export type { RoleResponse } from './models/RoleResponse';
 export type { Token } from './models/Token';
 export type { UserRegistration } from './models/UserRegistration';
 export type { UserResponse } from './models/UserResponse';

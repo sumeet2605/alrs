@@ -1,3 +1,7 @@
+from app.schemas.auth_schema import ForgotPasswordRequest, ResetPasswordRequest
+
+from app.schemas.auth_schema import ChangePasswordRequest
+
 # app/controllers/auth_controller.py
 from fastapi import APIRouter, Depends, HTTPException, status, Request # type: ignore
 from sqlalchemy.orm import Session  #type: ignore
@@ -83,3 +87,27 @@ def get_current_user(
         raise HTTPException(status_code=401, detail="Invalid token.")
     
     return user
+
+# Change password endpoint
+@router.post("/change-password", summary="Change user password", status_code=status.HTTP_200_OK)
+def change_password(
+    request: ChangePasswordRequest,
+    token: Annotated[str, Depends(oauth2_scheme)],
+    db: Session = Depends(get_db)
+):
+    token_data = auth_service.decode_token(token)
+    auth_service.change_user_password(db, token_data.username, request.current_password, request.new_password)
+    return {"message": "Password changed successfully."}
+
+
+# Forgot Password endpoint
+@router.post("/forgot-password", summary="Request password reset", status_code=status.HTTP_200_OK)
+def forgot_password(request: ForgotPasswordRequest, db: Session = Depends(get_db)):
+    auth_service.handle_forgot_password(db, request.email)
+    return {"message": "If the email exists, a reset link has been sent."}
+
+# Reset Password endpoint
+@router.post("/reset-password", summary="Reset password using token", status_code=status.HTTP_200_OK)
+def reset_password(request: ResetPasswordRequest, db: Session = Depends(get_db)):
+    auth_service.handle_reset_password(db, request.token, request.new_password)
+    return {"message": "Password has been reset successfully."}

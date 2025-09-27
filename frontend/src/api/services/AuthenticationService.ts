@@ -3,8 +3,11 @@
 /* tslint:disable */
 /* eslint-disable */
 import type { Body_user_login_api_login_post } from '../models/Body_user_login_api_login_post';
+import type { ChangePasswordRequest } from '../models/ChangePasswordRequest';
 import type { Token } from '../models/Token';
 import type { UserResponse } from '../models/UserResponse';
+import type { ForgotPasswordRequest } from '../models/ForgotPasswordRequest';
+import type { ResetPasswordRequest } from '../models/ResetPasswordRequest';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -51,6 +54,59 @@ export class AuthenticationService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/me',
+        });
+    }
+    /**
+     * Change user password
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static changePasswordApiChangePasswordPost(
+        requestBody: ChangePasswordRequest,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/change-password',
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Forgot Password
+     * Sends a password reset link to the user's email.
+     * @param data
+     * @returns object Successful Response
+     * @throws ApiError
+     */
+    public static forgotPasswordApiForgotPasswordPost(
+        data: ForgotPasswordRequest,
+    ): CancelablePromise<{ message: string }> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/forgot-password',
+            body: data,
+            mediaType: 'application/json',
+        });
+    }
+    /**
+     * Reset Password
+     * Resets the user's password using a token.
+     * @param data
+     * @returns object Successful Response
+     * @throws ApiError
+     */
+    public static resetPasswordApiResetPasswordPost(
+        data: ResetPasswordRequest,
+    ): CancelablePromise<{ message: string }> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/reset-password',
+            body: data,
+            mediaType: 'application/json',
         });
     }
 }
