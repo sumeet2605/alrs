@@ -4,10 +4,10 @@
 /* eslint-disable */
 import type { Body_user_login_api_login_post } from '../models/Body_user_login_api_login_post';
 import type { ChangePasswordRequest } from '../models/ChangePasswordRequest';
-import type { Token } from '../models/Token';
-import type { UserResponse } from '../models/UserResponse';
 import type { ForgotPasswordRequest } from '../models/ForgotPasswordRequest';
 import type { ResetPasswordRequest } from '../models/ResetPasswordRequest';
+import type { Token } from '../models/Token';
+import type { UserResponse } from '../models/UserResponse';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -35,13 +35,22 @@ export class AuthenticationService {
     /**
      * Refresh Access Token
      * Exchanges a valid refresh token for a new access token and refresh token.
+     * @param refreshCookie
      * @returns Token Successful Response
      * @throws ApiError
      */
-    public static refreshTokenApiRefreshPost(): CancelablePromise<Token> {
+    public static refreshTokenApiRefreshPost(
+        refreshCookie?: (string | null),
+    ): CancelablePromise<Token> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/refresh',
+            cookies: {
+                'refresh_cookie': refreshCookie,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
@@ -76,37 +85,41 @@ export class AuthenticationService {
         });
     }
     /**
-     * Forgot Password
-     * Sends a password reset link to the user's email.
-     * @param data
-     * @returns object Successful Response
+     * Request password reset
+     * @param requestBody
+     * @returns any Successful Response
      * @throws ApiError
      */
     public static forgotPasswordApiForgotPasswordPost(
-        data: ForgotPasswordRequest,
-    ): CancelablePromise<{ message: string }> {
+        requestBody: ForgotPasswordRequest,
+    ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/forgot-password',
-            body: data,
+            body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
     /**
-     * Reset Password
-     * Resets the user's password using a token.
-     * @param data
-     * @returns object Successful Response
+     * Reset password using token
+     * @param requestBody
+     * @returns any Successful Response
      * @throws ApiError
      */
     public static resetPasswordApiResetPasswordPost(
-        data: ResetPasswordRequest,
-    ): CancelablePromise<{ message: string }> {
+        requestBody: ResetPasswordRequest,
+    ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/reset-password',
-            body: data,
+            body: requestBody,
             mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
         });
     }
 }

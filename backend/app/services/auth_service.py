@@ -1,28 +1,41 @@
 # Handles forgot password: generates a reset token and (simulated) sends email
-import secrets
+
 # app/services/auth_service.py
 from datetime import datetime, timedelta
 from typing import Any
 from os import getenv
-
+import secrets
+import uuid
 import bcrypt # type: ignore
 from jose import jwt, JWTError # type: ignore
-
 from app.models.user_model import User
 from app.models.login_audit_model import LoginAudit
 from app.services.user_service import get_user_by_username
 from app.schemas.auth_schema import Token, TokenData
 from sqlalchemy.orm import Session #type: ignore
 from fastapi import HTTPException, status   #type: ignore
+from app.models.refresh_token_model import RefreshToken
 
 REFRESH_TOKEN_EXPIRE_DAYS = int(getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7))
 ACCESS_TOKEN_EXPIRE_MINUTES = int(getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
 SECRET_KEY = getenv("SECRET_KEY")
 ALGORITHM = "HS256"
 
+def generate_jti() -> str:
+    return str(uuid.uuid4())
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifies a plain password against a hashed one."""
     return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+
+def create_signed_action_token(data: dict, expires_minutes: int = 10) -> tuple[str, dict]:
+    to_encode = data.copy()
+    jti = generate_jti()
+    to_encode.update({"jti": jti})
+    expire = datetime.utcnow() + timedelta(minutes=expires_minutes)
+    to_encode.update({"exp": expire})
+    encoded = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded, {"jti": jti, "exp": expire}
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     """Creates a JWT access token with an expiration time."""
@@ -36,9 +49,11 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
-def create_refresh_token(data: dict, expires_delta: timedelta | None = None) -> str:
+def create_refresh_token(data: dict, expires_delta: timedelta | None = None) -> tuple[str, Any]:
     """Creates a JWT refresh token with a longer expiration time."""
     to_encode = data.copy()
+    jti = generate_jti()
+    to_encode.update({"jti": jti})
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
@@ -46,20 +61,22 @@ def create_refresh_token(data: dict, expires_delta: timedelta | None = None) -> 
     
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    return encoded_jwt, {"jti": jti, "exp": expire, "sub": data.get("sub")}
 
 def decode_token(token: str) -> TokenData:
     """Decodes a JWT token and returns the payload data."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
+        action = payload.get("action")
+        jti = payload.get("jti")
         if username is None:
-            raise HTTPException(status_code=401, detail="Invalid token.")
-        return TokenData(username=username)
+            raise HTTPException(status_code=401, detail="Invalid token.")   
+        return TokenData(username=username, jti=jti, action=action)
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token.")
 
-def handle_user_login(db: Session, username: str, password: str, ip_address: str) -> Token:
+def handle_user_login(db: Session, username: str, password: str, ip_address: str, request_headers) -> Token:
     """
     Handles user login, verifies credentials, and generates a JWT.
     All business logic is contained here to keep the controller thin.
@@ -118,7 +135,20 @@ def handle_user_login(db: Session, username: str, password: str, ip_address: str
     access_token = create_access_token(
         data={"sub": user.username}
     )
-    refresh_token = create_refresh_token(data={"sub": user.username})
+    refresh_token, refresh_payload = create_refresh_token(data={"sub": user.username})
+    expires_at = refresh_payload["exp"]
+    rt = RefreshToken(
+        user_id = user.id,
+        jti=refresh_payload["jti"],
+        issued_at=datetime.now(),
+        expires_at=expires_at,
+        revoked=False,
+        ip_address=ip_address,
+        user_agent=request_headers.get("user-agent") if request_headers else None
+    )
+    db.add(rt)
+    db.commit()
+    db.refresh(rt)
     return Token(access_token=access_token,refresh_token=refresh_token, token_type="bearer")
 
 
@@ -163,3 +193,4 @@ def handle_reset_password(db: Session, token: str, new_password: str) -> None:
     user.reset_token = None
     user.reset_token_expiry = None
     db.commit()
+

@@ -1,3 +1,6 @@
+from fastapi.security import OAuth2PasswordBearer # type: ignore
+from typing import Annotated
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
 # app/controllers/admin_controller.py
 from fastapi import APIRouter, Depends, status #type: ignore
 from sqlalchemy.orm import Session #type: ignore
@@ -16,6 +19,7 @@ router = APIRouter(
              dependencies=[Depends(has_permission("roles:create"))])
 def bulk_create_roles(
     roles: List[RoleBulkCreate],
+    token: Annotated[str, Depends(oauth2_scheme)],
     db: Session = Depends(get_db)
 ):
     """Bulk creates a list of roles."""
@@ -26,6 +30,7 @@ def bulk_create_roles(
              dependencies=[Depends(has_permission("permissions:create"))])
 def bulk_create_permissions(
     permissions: List[PermissionBulkCreate],
+    token: Annotated[str, Depends(oauth2_scheme)],
     db: Session = Depends(get_db)
 ):
     """Bulk creates a list of permissions."""

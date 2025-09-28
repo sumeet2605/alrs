@@ -1,3 +1,6 @@
+from fastapi.security import OAuth2PasswordBearer # type: ignore
+from typing import Annotated
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
 # controllers/user_controller.py
 from fastapi import APIRouter, Depends, status, HTTPException, BackgroundTasks # type: ignore 
 from sqlalchemy.orm import Session  # type: ignore
@@ -25,8 +28,8 @@ def get_current_owner(db: Session = Depends(get_db)):
 def register_user(
     user_data: UserRegistration,
     background_tasks: BackgroundTasks,
+    token: Annotated[str, Depends(oauth2_scheme)],
     db: Session = Depends(get_db),
-    
 ):
     """
     Handles user registration by validating input and creating a new user.
@@ -44,7 +47,7 @@ def register_user(
     summary="List all users",
     response_model=list[UserResponse]
 )
-def list_all_users(db: Session = Depends(get_db)):
+def list_all_users(token: Annotated[str, Depends(oauth2_scheme)], db: Session = Depends(get_db)):
     """
     Retrieves a list of all registered users.
     This endpoint is restricted to authenticated 'Owner' users.

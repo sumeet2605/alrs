@@ -1,10 +1,10 @@
 import React, { useMemo } from 'react';
 import { Card, Row, Col, Statistic } from 'antd';
 // Removed: import { useAuth } from '../contexts/AuthContext'; - This caused the build error
-
+import { useEffect, useState } from 'react';
 import Typography from '@mui/material/Typography';
 import { ArrowUpOutlined, ClockCircleOutlined, TeamOutlined } from '@ant-design/icons';
-
+import { UsersService } from '../api/services/UsersService';
 // --- MOCK AuthContext/useAuth for standalone functionality (The FIX) ---
 // Since the environment couldn't resolve the external import, we provide a basic hook here.
 interface AuthContextType {
@@ -46,10 +46,22 @@ const getTeamSizeByRole = (role: string | null | undefined): number => {
 const DashboardPage: React.FC = () => {
   // Now using the mock useAuth defined above
   const { userRole } = useAuth();
-  const displayRole = userRole || 'Client';
+    const displayRole = userRole || 'Client';
+    const [userCount, setUserCount] = useState<number | null>(null);
+    const [userCountLoading, setUserCountLoading] = useState<boolean>(true);
   
   // Calculate dynamic values based on the role
-  const teamSize = useMemo(() => getTeamSizeByRole(userRole), [userRole]);
+    useEffect(() => {
+  UsersService.listAllUsersApiUsersGet()
+    .then(users => {
+      setUserCount(users.length);
+      setUserCountLoading(false);
+    })
+    .catch(() => {
+      setUserCount(null);
+      setUserCountLoading(false);
+    });
+}, []);
   const lowerCaseRole = displayRole.toLowerCase();
 
   // Determine custom message and logic based on role
@@ -107,7 +119,7 @@ const DashboardPage: React.FC = () => {
           <Card bordered={false} className="shadow-lg hover:shadow-xl transition-shadow duration-300">
             <Statistic
               title="Team Size"
-              value={teamSize} // Dynamic value based on role
+               value={userCountLoading ? '...' : userCount ?? 'N/A'} // Dynamic value based on role
               valueStyle={{ color: '#1890ff' }}
               prefix={<TeamOutlined />}
             />

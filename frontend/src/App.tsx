@@ -1,6 +1,7 @@
 // src/App.tsx
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
+import CircularProgress from '@mui/material/CircularProgress';
 
 // Import Page Components (to be created next)
 import LoginPage from './pages/LoginPage';
@@ -23,42 +24,61 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 };
 
 const App: React.FC = () => {
+  const { isRefreshing } = useAuth();
   // NOTE: You can also use a wrapper for admin roles here if needed
 
   return (
-    <Routes>
-      {/* PUBLIC ROUTES */}
-      <Route path="/" element={<Navigate to="/login" replace />} />
-      <Route path="/login" element={<LoginPage />} />
-      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
-      <Route path="/reset-password" element={<ResetPasswordPage />} />
+    <>
+      {isRefreshing && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '100vw',
+          height: '100vh',
+          background: 'rgba(255,255,255,0.6)',
+          zIndex: 9999,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}>
+          <CircularProgress color="primary" size={60} />
+        </div>
+      )}
+      <Routes>
+        {/* PUBLIC ROUTES */}
+        <Route path="/" element={<Navigate to="/login" replace />} />
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
 
-      <Route path="/health" element={<p>Health Check OK</p>} />
+        <Route path="/health" element={<p>Health Check OK</p>} />
 
-      {/* PROTECTED ROUTES */}
-      <Route
-        path="/"
-        element={<ProtectedRoute><DefaultLayout /></ProtectedRoute>}
-      >
+        {/* PROTECTED ROUTES */}
         <Route
-          path="/dashboard"
-          element={<ProtectedRoute><DashboardPage /></ProtectedRoute>}
-        />
-        <Route path="/register" element={<ProtectedRoute><RegisterPage /></ProtectedRoute>} />
-        <Route
-          path="/admin/users"
-          element={<ProtectedRoute><AdminUsersPage /></ProtectedRoute>}
-        />
-        <Route
-          path="/change-password"
-          element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>}
-        />
-      </Route>
+          path="/"
+          element={<ProtectedRoute><DefaultLayout /></ProtectedRoute>}
+        >
+          <Route
+            path="/dashboard"
+            element={<ProtectedRoute><DashboardPage /></ProtectedRoute>}
+          />
+          <Route path="/register" element={<ProtectedRoute><RegisterPage /></ProtectedRoute>} />
+          <Route
+            path="/admin/users"
+            element={<ProtectedRoute><AdminUsersPage /></ProtectedRoute>}
+          />
+          <Route
+            path="/change-password"
+            element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>}
+          />
+        </Route>
 
 
-      {/* FALLBACK */}
-      {/* <Route path="*" element={<NotFoundPage />} /> */}
-    </Routes>
+        {/* FALLBACK */}
+        {/* <Route path="*" element={<NotFoundPage />} /> */}
+      </Routes>
+    </>
   );
 };
 

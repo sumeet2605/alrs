@@ -214,7 +214,8 @@ export const sendRequest = async <T>(
         headers,
         data: body ?? formData,
         method: options.method,
-        withCredentials: config.WITH_CREDENTIALS,
+        // Always send cookies for all API requests
+        withCredentials: true,
         withXSRFToken: config.CREDENTIALS === 'include' ? config.WITH_CREDENTIALS : false,
         cancelToken: source.token,
     };

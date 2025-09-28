@@ -5,11 +5,13 @@ from typing import Optional
 
 class Token(BaseModel):
     access_token: str
-    refresh_token: str
+    refresh_token: Optional[str] = None
     token_type: str
 
 class TokenData(BaseModel):
     username: Optional[str] = None
+    action: Optional[str] = None
+    jti: Optional[str] = None
 
 
 class LoginRequest(BaseModel):

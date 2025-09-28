@@ -1,10 +1,10 @@
+// src/contexts/AuthContext.tsx
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import type { ReactNode } from 'react';
 import type { Body_user_login_api_login_post } from '../api/models/Body_user_login_api_login_post';
 import type { Token } from '../api/models/Token';
-// Assuming AuthenticationService and OpenAPI are generated from your backend schema
-import { AuthenticationService } from '../api/services/AuthenticationService'; 
-import { OpenAPI } from '../api/core/OpenAPI'; 
+import { AuthenticationService } from '../api/services/AuthenticationService';
+import { OpenAPI } from '../api/core/OpenAPI';
 
 // --- 1. Define Context State Type ---
 interface AuthContextType {
@@ -15,183 +15,227 @@ interface AuthContextType {
   login: (credentials: Body_user_login_api_login_post) => Promise<void>;
   logout: () => void;
   refreshAccessToken: () => Promise<boolean>;
-  /**
-   * Wrapper for making authenticated API calls. 
-   * Handles 401 interception, token refresh, and retry logic automatically.
-   */
   authorizedFetch: <T>(serviceCall: () => Promise<T>) => Promise<T>;
 }
 
 // --- 2. Create the Context ---
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// --- Helpers ---
+const ACCESS_KEY = 'token';
+
+// set OpenAPI token helper
+function setOpenApiToken(token: string | null) {
+  if (token) {
+    OpenAPI.TOKEN = token;
+  } else {
+    // @ts-ignore
+    OpenAPI.TOKEN = undefined;
+  }
+}
+
 // --- 3. Auth Provider Component ---
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [refreshToken, setRefreshToken] = useState<string | null>(null);
+  const [accessToken, setAccessToken] = useState<string | null>(() => {
+    try { return localStorage.getItem(ACCESS_KEY); } catch { return null; }
+  });
   const [userRole, setUserRole] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  
-  // Ref to hold pending requests while a token refresh is in progress
-  const failedQueue = useRef<(() => void)[]>([]);
+  const [initializing, setInitializing] = useState<boolean>(true);
 
-  // --- Utility Functions (useCallback for stability) ---
+  /**
+   * Queue of pending requests while refresh is in progress.
+   * Each item is a function that, when called, will retry the original request and resolve/reject the waiting promise.
+   */
+  const pendingQueue = useRef<Array<{ 
+    retry: () => Promise<any>, 
+    resolve: (v: any) => void, 
+    reject: (err: any) => void 
+  }>>([]);
+
+  // --- Utilities ---
+  const clearTokensLocal = useCallback(() => {
+    try {
+      localStorage.removeItem(ACCESS_KEY);
+    } catch {}
+    setAccessToken(null);
+    setOpenApiToken(null);
+  }, []);
 
   const logout = useCallback(() => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
-    setAccessToken(null);
-    setRefreshToken(null);
+    // Keep same behavior: clear tokens client-side and OpenAPI
+    clearTokensLocal();
     setUserRole(null);
-    OpenAPI.TOKEN = undefined;
-    console.log("Logged out. Tokens cleared.");
+    console.log('Logged out. Tokens cleared.');
+  }, [clearTokensLocal]);
+
+  const storeTokens = useCallback((access: string | null) => {
+    if (access) {
+      try { localStorage.setItem(ACCESS_KEY, access); } catch {}
+      setAccessToken(access);
+      setOpenApiToken(access);
+    } else {
+      try { localStorage.removeItem(ACCESS_KEY); } catch {}
+      setAccessToken(null);
+      setOpenApiToken(null);
+    }
   }, []);
 
   /**
-   * Handles the actual call to the /refresh endpoint.
-   * Returns true on success, false on failure (and logs user out).
+   * refreshAccessToken:
+   * - Uses cookie-based refresh: calls the backend refresh endpoint which reads the httpOnly cookie.
+   * - If the backend returns a new access_token, we store it. Any refresh_token returned by the backend is ignored client-side.
    */
   const refreshAccessToken = useCallback(async (): Promise<boolean> => {
-    if (!refreshToken) {
-      console.error("Cannot refresh: No refresh token available.");
-      logout();
-      return false;
+    // If already refreshing, return a promise that resolves when refresh finishes
+    if (isRefreshing) {
+      return new Promise<boolean>((resolve) => {
+        pendingQueue.current.push({
+          retry: async () => true,
+          resolve: (v: any) => resolve(!!v),
+          reject: () => resolve(false)
+        });
+      });
     }
-    if (isRefreshing) return false; // Already refreshing
 
+    // If there's no access token at all, still attempt cookie refresh (server may issue new access)
     setIsRefreshing(true);
-    
-    // Temporarily set the refresh token for the refresh call itself
-    // NOTE: This assumes the generated client uses OpenAPI.TOKEN for the Authorization header.
-    // In a real scenario, you might need a dedicated, raw fetch for this endpoint.
-    const originalToken = OpenAPI.TOKEN;
-    OpenAPI.TOKEN = refreshToken; 
-
     try {
-      const tokenData: Token = await AuthenticationService.refreshTokenApiRefreshPost();
-      
-      // Success: Store new tokens
-      localStorage.setItem('access_token', tokenData.access_token);
-      localStorage.setItem('refresh_token', tokenData.refresh_token);
-      setAccessToken(tokenData.access_token);
-      setRefreshToken(tokenData.refresh_token);
-      OpenAPI.TOKEN = tokenData.access_token; // Set the new access token globally
-
+      // Cookie-based refresh: ensure credentials are sent
+      const tokenData: Token = await AuthenticationService.refreshTokenApiRefreshPost(undefined, { withCredentials: true });
+      if (tokenData && tokenData.access_token) {
+        storeTokens(tokenData.access_token);
+        // flush pending queue: retry all queued requests
+        const queue = pendingQueue.current.splice(0);
+        for (const item of queue) {
+          try {
+            const result = await item.retry();
+            item.resolve(result);
+          } catch (e) {
+            item.reject(e);
+          }
+        }
+        setIsRefreshing(false);
+        return true;
+      } else {
+        setIsRefreshing(false);
+        const queue = pendingQueue.current.splice(0);
+        for (const item of queue) item.reject(new Error('Invalid refresh response'));
+        logout();
+        return false;
+      }
+    } catch (err) {
       setIsRefreshing(false);
-      // Process the queue of failed requests
-      failedQueue.current.forEach(resolve => resolve());
-      failedQueue.current = [];
-      return true;
-
-    } catch (error) {
-      console.error("Refresh token failed:", error);
-      // Failure: Log the user out
+      const queue = pendingQueue.current.splice(0);
+      for (const item of queue) item.reject(err);
       logout();
-      setIsRefreshing(false);
-      // Restore original token if failure occurred before new tokens were set
-      OpenAPI.TOKEN = originalToken; 
       return false;
     }
-  }, [refreshToken, isRefreshing, logout]);
+  }, [isRefreshing, logout, storeTokens]);
 
   /**
-   * Wrapper function to intercept 401 errors, refresh the token, and retry the request.
+   * authorizedFetch:
+   * Wraps a call and on 401 attempts refresh and retry once.
+   * Queues concurrent callers while refresh is in progress.
    */
   const authorizedFetch = useCallback(async <T,>(serviceCall: () => Promise<T>): Promise<T> => {
     try {
-      // 1. Attempt the original API call
       return await serviceCall();
-    } catch (error: any) {
-      // Check if the error is a 401 Unauthorized error
-      if (error?.status !== 401) {
-        throw error; // Not a 401, re-throw
+    } catch (err: any) {
+      const status = err?.response?.status ?? err?.status ?? null;
+      if (status !== 401) {
+        throw err; // not an auth error
       }
 
-      // If no refresh token exists, we can't refresh. Force logout.
-      if (!refreshToken) {
-        logout();
-        throw error;
-      }
-      
-      // 2. 401 occurred. Handle token refresh/queueing.
-      
-      // If a refresh is already in progress, queue the current request and wait.
+      // If refresh is in progress, enqueue this request and return promise that will be resolved/rejected after retry
       if (isRefreshing) {
-        return new Promise<T>((resolve) => {
-          failedQueue.current.push(async () => {
-            // Once refresh is done, retry the original service call
-            resolve(await serviceCall());
+        return new Promise<T>((resolve, reject) => {
+          pendingQueue.current.push({
+            retry: async () => {
+              // when called, retry the original service call and return result
+              return await serviceCall();
+            },
+            resolve,
+            reject
           });
         });
       }
 
-      // 3. Initiate the refresh process
-      const refreshSuccess = await refreshAccessToken();
-      
-      if (refreshSuccess) {
-        // 4. Refresh successful, retry the original request
-        return await serviceCall();
-      } else {
-        // 5. Refresh failed (user is now logged out)
-        throw error;
+      // Attempt refresh (cookie-based)
+      const ok = await refreshAccessToken();
+      if (!ok) {
+        // refresh failed and logout executed
+        throw err;
       }
+
+      // retry original call once after refresh
+      return await serviceCall();
     }
-  }, [refreshToken, isRefreshing, refreshAccessToken, logout]);
+  }, [isRefreshing, refreshAccessToken, logout]);
 
-
-  // --- Core Context Logic ---
-
+  // --- Core Context Logic: login (keep same except we DO NOT store refresh token) ---
   const login = useCallback(async (credentials: Body_user_login_api_login_post) => {
     try {
       const tokenData: Token = await AuthenticationService.userLoginApiLoginPost(credentials);
 
-      // Store tokens
-      localStorage.setItem('access_token', tokenData.access_token);
-      localStorage.setItem('refresh_token', tokenData.refresh_token);
-
-      setAccessToken(tokenData.access_token);
-      setRefreshToken(tokenData.refresh_token);
-      OpenAPI.TOKEN = tokenData.access_token; // Set access token globally
+      // Store only access token client-side. The backend should set refresh token as an httpOnly cookie.
+      try {
+        if (tokenData.access_token) localStorage.setItem(ACCESS_KEY, tokenData.access_token);
+      } catch {}
+      setAccessToken(tokenData.access_token ?? null);
+      setOpenApiToken(tokenData.access_token ?? null);
 
       // Fetch user data and role using the new token
       const user = await AuthenticationService.getCurrentUserApiMeGet();
-      setUserRole(user.role.name); 
+      setUserRole(user.role.name);
 
       console.log("Login successful!");
     } catch (error) {
       console.error("Login failed:", error);
-      throw error; 
+      throw error;
     }
-  }, [authorizedFetch]);
-
+  }, []);
 
   // --- Initial Load Effect ---
   useEffect(() => {
-    const storedAccess = localStorage.getItem('access_token');
-    const storedRefresh = localStorage.getItem('refresh_token');
-    
-    if (storedAccess && storedRefresh) {
-      setAccessToken(storedAccess);
-      setRefreshToken(storedRefresh);
-      OpenAPI.TOKEN = storedAccess; 
-      
-      // Fetch user data/role using authorizedFetch to handle immediate token expiry
-      authorizedFetch(() => AuthenticationService.getCurrentUserApiMeGet())
-        .then(user => {
-          setUserRole(user.role.name);
-        })
-        .catch(error => {
-          console.error("Initial token validation failed:", error);
-          // If token fails to validate (even after refresh attempt), force logout
-          logout();
-        });
-    } else {
-      // Clear any leftover global token
-      OpenAPI.TOKEN = undefined;
-    }
-  }, [logout, authorizedFetch]); // Only runs on component mount
+    const storedAccess = (() => { try { return localStorage.getItem(ACCESS_KEY); } catch { return null; } })();
 
-  const value = {
+    const initialize = async () => {
+      if (storedAccess) {
+        setAccessToken(storedAccess);
+        setOpenApiToken(storedAccess);
+        try {
+          const user = await authorizedFetch(() => AuthenticationService.getCurrentUserApiMeGet());
+          setUserRole(user?.role?.name ?? null);
+        } catch {
+          // if validation fails, attempt refresh (this may logout on failure)
+          const ok = await refreshAccessToken();
+          if (ok) {
+            try {
+              const user = await AuthenticationService.getCurrentUserApiMeGet();
+              setUserRole(user?.role?.name ?? null);
+            } catch {}
+          }
+        }
+      } else {
+        // No access token stored — attempt cookie-based refresh (server may issue a new access token)
+        const ok = await refreshAccessToken();
+        if (ok) {
+          try {
+            const user = await AuthenticationService.getCurrentUserApiMeGet();
+            setUserRole(user?.role?.name ?? null);
+          } catch {}
+        } else {
+          logout();
+        }
+      }
+      setInitializing(false);
+    };
+    initialize();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // run on mount only
+
+  const value: AuthContextType = {
     isAuthenticated: !!accessToken,
     accessToken,
     userRole,
@@ -199,9 +243,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     login,
     logout,
     refreshAccessToken,
-    authorizedFetch,
+    authorizedFetch
   };
 
+  if (initializing) {
+    // Optionally, show a spinner or blank screen while initializing
+    return <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span>Loading...</span></div>;
+  }
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
