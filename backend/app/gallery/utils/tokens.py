@@ -11,9 +11,7 @@ SECRET_KEY = getenv("SECRET_KEY")
 def create_gallery_access_token(gallery_id: str, expires_minutes: int = GALLERY_TOKEN_EXP_MIN) -> str:
     now = datetime.utcnow()
     payload = {
-        "sub": f"gallery:{gallery_id}",
         "gallery_id": str(gallery_id),
-        "iat": now,
         "exp": now + timedelta(minutes=expires_minutes),
     }
     token = jwt.encode(payload, SECRET_KEY, algorithm=GALLERY_TOKEN_ALG)

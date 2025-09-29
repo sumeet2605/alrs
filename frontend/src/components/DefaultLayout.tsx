@@ -24,7 +24,7 @@ const DefaultLayout: React.FC = () => {
     { key: '/dashboard', icon: <HomeOutlined />, label: 'Dashboard' },
     // Only show "Users" link if the user is an 'Owner' (admin)
     ...(userRole === 'Owner' 
-      ? [{ key: '/admin/users', icon: <UserOutlined />, label: 'User Management' }] 
+      ? [{ key: '/dashboard/admin/users', icon: <UserOutlined />, label: 'User Management' }] 
       : []
     ),
     { key: '/settings', icon: <SettingOutlined />, label: 'Settings' },

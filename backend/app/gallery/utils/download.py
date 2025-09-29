@@ -1,0 +1,96 @@
+# backend/app/gallery/download_disk.py
+from fastapi import Depends, HTTPException, status, Request, BackgroundTasks #type: ignore
+from sqlalchemy.orm import Session #type: ignore
+from app.database import get_db
+from app.gallery.services import gallery_service as crud
+from app.auth.services.dependencies import get_optional_current_user
+from app.gallery.utils.tokens import verify_gallery_access_token
+from pathlib import Path
+from fastapi.responses import FileResponse #type:ignore
+import zipfile, tempfile, os, time
+from app import config
+
+def resolve_media_path(rel_path: str) -> Path | None:
+    if not rel_path:
+        return None
+    rp = rel_path.lstrip("/")
+    if rp.startswith("media/"):
+        rp = rp[len("media/"):]
+    return Path(config.MEDIA_ROOT) / rp
+
+def cleanup_file_later(path: str, delay_seconds: int = 60):
+    # naive cleanup: remove immediately (we'll schedule with BackgroundTasks)
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception:
+        pass
+
+def build_zip_file_on_disk(file_list: list[tuple[str, str]], out_path: str):
+    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        for abs_path, arcname in file_list:
+            if os.path.exists(abs_path):
+                zf.write(abs_path, arcname=os.path.basename(arcname))
+
+def prepare_gallery_file_list(db: Session, gallery_id: str):
+    photos = crud.list_photos(db, gallery_id) or []
+    file_list = []
+    for p in photos:
+        rel = getattr(p, "path_original", None)
+        abs_path_p = resolve_media_path(rel)
+        if abs_path_p and abs_path_p.exists():
+            file_list.append((str(abs_path_p), abs_path_p.name))
+    return file_list
+
+def check_gallery_access(db: Session, gallery_id: str, request: Request, current_user):
+    gallery = crud.get_gallery(db, gallery_id)
+    if not gallery:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Gallery not found")
+    allowed = False
+    if current_user and getattr(gallery, "owner_id", None) == getattr(current_user, "id", None):
+        allowed = True
+    elif getattr(gallery, "is_public", False):
+        allowed = True
+    else:
+        cookie_name = f"gallery_access_{gallery_id}"
+        token = request.cookies.get(cookie_name)
+        if token and verify_gallery_access_token(token, gallery_id):
+            allowed = True
+    if not allowed:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+    return gallery
+
+def download_gallery_disk(
+    gallery_id: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_optional_current_user),
+):
+    # check access
+    check_gallery_access(db, gallery_id, request, current_user)
+
+    file_list = prepare_gallery_file_list(db, gallery_id)
+    if not file_list:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No available files to download")
+
+    tmpdir = tempfile.mkdtemp(prefix=f"gallery_{gallery_id}_")
+    zip_path = os.path.join(tmpdir, f"gallery_{gallery_id}.zip")
+    build_zip_file_on_disk(file_list, zip_path)
+
+    # Schedule cleanup of the zip file and tmpdir after response.
+    def _cleanup():
+        try:
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+            # remove tmpdir if empty
+            try:
+                os.rmdir(tmpdir)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+    background_tasks.add_task(_cleanup)
+
+    return FileResponse(zip_path, filename=f"gallery-{gallery_id}.zip", media_type="application/zip")

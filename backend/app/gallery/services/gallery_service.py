@@ -64,6 +64,9 @@ def create_gallery(db: Session, owner_id: str, title: str, description: Optional
     db.refresh(g)
     return g
 
+def get_gallery(db:Session, gallery_id:str):
+    return db.query(models.Gallery).filter(models.Gallery.id == gallery_id).first()
+
 def list_galleries(db:Session) -> List[models.Gallery]:
     return db.query(models.Gallery).order_by(models.Gallery.created_at.desc()).all()
 

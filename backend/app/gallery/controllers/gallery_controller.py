@@ -14,6 +14,7 @@ from app.auth.services.dependencies import get_current_user, get_optional_curren
 from app.auth.utils.password_hasher import get_password_hash as hash_password, verify_password
 from app.gallery.utils.tokens import create_gallery_access_token, verify_gallery_access_token
 from pathlib import Path
+from app.gallery.utils.download import download_gallery_disk
 
 router = APIRouter(tags=["Gallery"])
 
@@ -25,7 +26,6 @@ def create_gallery(payload: GalleryCreate, db: Session = Depends(get_db), user=D
 
 @router.get("/galleries")
 def list_galleries(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    
     out = crud.get_galleries_for_owner_with_cover(db, user.id)
     return {"galleries": out}
 
@@ -181,18 +181,22 @@ def unlock_gallery_endpoint(gallery_id: str, body: dict, response: Response, db:
 
 @router.get("/galleries/{gallery_id}/photos")
 def list_photos(gallery_id: str,request: Request, db: Session = Depends(get_db), user=Depends(get_optional_current_user)):
-    gallery = db.query(Gallery).filter(Gallery.id == gallery_id).first()
+    gallery = crud.get_gallery(db, gallery_id)
     if not gallery:
         raise HTTPException(status_code=404, detail="Gallery not found")
-    if not gallery.is_public:
-        # Owner may view
-        if user and getattr(user, "id", None) == gallery.owner_id:
-            pass
-        else:
-            cookie_name = f"gallery_access_{gallery_id}"
-            token = request.cookies.get(cookie_name)
-            if not token or not verify_gallery_access_token(token, gallery_id):
-                raise HTTPException(status_code=401, detail="Unauthorized - gallery is password protected")
+    allowed = False
+    if user and gallery.owner_id == user.id:
+        allowed = True
+    elif gallery.is_public:
+        allowed = True
+    else:
+        token = request.cookies.get(f"gallery_access_{gallery_id}")
+        if token and verify_gallery_access_token(token, gallery_id):
+            allowed = True
+    
+    if not allowed:
+        raise HTTPException(status_code=401, detail="Unauthorized - gallery is password protected")
+    
     photos = crud.list_photos(db, gallery_id)
     out = []
     for p in photos:
@@ -277,3 +281,41 @@ def set_photo_as_cover(
 
     return {"detail": "Cover set", "photo_id": photo.id}
 
+
+@router.post("/galleries/{gallery_id}/unlock")
+def unlock_gallery(gallery_id: str, payload: dict, response: Response, db: Session = Depends(get_db)):
+    password = payload.get("password")
+    if password is None:
+        raise HTTPException(status_code=400, detail="Password required")
+    if not crud.verify_gallery_password(db, gallery_id, password):
+        raise HTTPException(status_code=401, detail="Invalid password")
+    token = create_gallery_access_token(gallery_id=gallery_id)
+    max_age = 60 * 60 * 24
+    response.set_cookie(
+        key=f"gallery_access_{gallery_id}",
+        value = token,
+        httponly=True,
+        max_age = max_age,
+        path="/",
+        samesite="lax"
+    )
+    return {"ok": True}
+
+
+@router.get("/galleries/{gallery_id}/download")
+def download_gallery_route(
+    gallery_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_optional_current_user),
+):
+    """
+    Wrapper route that calls the download helper in app.gallery.download.
+    """
+    # gallery_download.download_gallery expects: (gallery_id, request, db, current_user)
+    return download_gallery_disk(
+        gallery_id=gallery_id,
+        request=request,
+        db=db,
+        current_user=current_user
+    )
