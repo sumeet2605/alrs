@@ -15,6 +15,7 @@ import ResetPasswordPage from './pages/ResetPasswordPage';
 import DefaultLayout from './components/DefaultLayout';
 import { GalleryList } from './pages/Dashboard/GalleryList';
 import { GalleryEditor } from './pages/Dashboard/GalleryEditor';
+import PublicGalleryView from './pages/PublicGalleryView';
 // import NotFoundPage from './pages/NotFoundPage';
 
 // Simple Protected Route Wrapper
@@ -53,6 +54,8 @@ const App: React.FC = () => {
         {/* PUBLIC ROUTES */}
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<LoginPage />} />
+        {/* Public gallery viewer (shareable) */}
++        <Route path="/g/:id" element={<PublicGalleryView />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/health" element={<p>Health Check OK</p>} />

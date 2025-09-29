@@ -20,7 +20,7 @@ router = APIRouter(tags=["Gallery"])
 
 @router.post("/galleries", status_code=201)
 def create_gallery(payload: GalleryCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    g = crud.create_gallery(db, owner_id=user.id, title=payload.title, description=payload.description, is_public=payload.is_public)
+    g = crud.create_gallery(db, owner_id=user.id, title=payload.title, description=payload.description, is_public=payload.is_public) # type: ignore
     return g
 
 
@@ -306,6 +306,7 @@ def unlock_gallery(gallery_id: str, payload: dict, response: Response, db: Sessi
 def download_gallery_route(
     gallery_id: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user = Depends(get_optional_current_user),
 ):
@@ -316,6 +317,7 @@ def download_gallery_route(
     return download_gallery_disk(
         gallery_id=gallery_id,
         request=request,
+        background_tasks=background_tasks,
         db=db,
         current_user=current_user
     )

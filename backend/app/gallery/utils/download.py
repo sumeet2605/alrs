@@ -37,7 +37,7 @@ def prepare_gallery_file_list(db: Session, gallery_id: str):
     file_list = []
     for p in photos:
         rel = getattr(p, "path_original", None)
-        abs_path_p = resolve_media_path(rel)
+        abs_path_p = resolve_media_path(rel) # type: ignore
         if abs_path_p and abs_path_p.exists():
             file_list.append((str(abs_path_p), abs_path_p.name))
     return file_list

@@ -243,5 +243,25 @@ export class GalleryService {
             },
         });
     }
-    
+    /**
+     * Download Gallery Route
+     * Wrapper route that calls the download helper in app.gallery.download.
+     * @param galleryId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static downloadGalleryRouteApiGalleriesGalleryIdDownloadGet(
+        galleryId: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/galleries/{gallery_id}/download',
+            path: {
+                'gallery_id': galleryId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
 }

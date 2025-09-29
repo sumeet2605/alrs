@@ -3,7 +3,7 @@ import React, { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { GalleryService } from "../api/services/GalleryService";
 import { Spin, message, Progress } from "antd";
-
+import type { AxiosProgressEvent } from "axios";
 
 type Props = {
   galleryId: string;
@@ -27,7 +27,19 @@ export const UploadDropzone: React.FC<Props> = ({ galleryId, onComplete }) => {
       // The generated client types the parameter as a structured FormData type.
       // We cast here to satisfy TypeScript and let the generator handle the request.
         await GalleryService.uploadPhotosFormData(galleryId, fd, {
-            onUploadProgress: (ev) => { /* update percent */ },
+          onUploadProgress: (ev?: AxiosProgressEvent) => { 
+            if (!ev) return;
+
+            const total = ev.total ?? 0;
+
+            const loaded = ev.loaded ?? 0;
+
+            if (total > 0) {
+
+              setPercent(Math.min(100, Math.round((loaded / total) * 100)));
+
+            }
+             },
             withCredentials: true
         });
       // Best-effort progress: show done

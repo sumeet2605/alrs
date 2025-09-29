@@ -41,6 +41,7 @@ def set_gallery_password(db:Session, gallery_id:str, owner_id:str, password: Opt
         raise ValueError("Gallery not found or not owned by user")
     if password:
         gallery.password_hash = get_password_hash(password)
+        gallery.is_public = True
     else:
         gallery.password_hash = None
     db.add(gallery)

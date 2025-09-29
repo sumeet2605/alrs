@@ -1,8 +1,25 @@
 // frontend/src/pages/Dashboard/GalleryEditor.tsx
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
-import { UploadDropzone } from "../../components/UploadDropzone";
-import { Row, Col, Card, Button, Popconfirm, message, Space, Spin, Empty } from "antd";
+import {
+  UploadDropzone
+} from "../../components/UploadDropzone";
+import {
+  Row,
+  Col,
+  Card,
+  Button,
+  Popconfirm,
+  message as antdMessage,
+  Space,
+  Spin,
+  Empty,
+  Modal,
+  Input,
+  App,
+  Tooltip,
+} from "antd";
+import { ReloadOutlined, DownloadOutlined, PictureFilled, SettingOutlined } from "@ant-design/icons";
 import { GalleryService } from "../../api/services/GalleryService";
 // If you generated delete/cover endpoints later, replace these axios calls with generated ones
 import axios from "axios";
@@ -23,16 +40,17 @@ type Photo = {
 
 export const GalleryEditor: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { message } = App.useApp(); // use consistent message pattern like Galleries page
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(false);
-    
-    // password prompt state
+
+  // password prompt state
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
   const [passwordValue, setPasswordValue] = useState("");
   const [unlocking, setUnlocking] = useState(false);
 
   const resolveUrl = useCallback((url?: string | null) => {
-    if (!url) return undefined;
+    if (!url) return null;
     if (url.startsWith("http://") || url.startsWith("https://")) return url;
     const base = (OpenAPI.BASE ?? "").replace(/\/$/, "");
     return `${base}${url}`;
@@ -60,31 +78,31 @@ export const GalleryEditor: React.FC = () => {
         list = (resp as any) as Photo[];
       }
       setPhotos(list);
-    } catch (err) {
-        console.error("fetch photos", err);
-        const status = err?.response?.status ?? err?.status;
-        if (status === 401 || status === 403) {
-            // show password prompt modal to attempt unlock
-            setPasswordModalVisible(true);
-            message.info("This gallery is password protected. Please enter the password to view.");
+    } catch (err: any) {
+      console.error("fetch photos", err);
+      const status = err?.response?.status ?? err?.status;
+      if (status === 401 || status === 403) {
+        // show password prompt modal to attempt unlock
+        setPasswordModalVisible(true);
+        message.info("This gallery is password protected. Please enter the password to view.");
       } else {
         message.error("Failed to load photos");
       }
     } finally {
       setLoading(false);
     }
-  }, [id]);
+  }, [id, message]);
 
   useEffect(() => {
     fetchPhotos();
   }, [fetchPhotos]);
-    
-    const unlockGallery = async () => {
+
+  const unlockGallery = async () => {
     if (!id) return;
     setUnlocking(true);
     try {
-        // POST to unlock endpoint - server will set cookie if success
-        const body = { password: passwordValue };
+      // POST to unlock endpoint - server will set cookie if success
+      const body = { password: passwordValue };
       await GalleryService.unlockGalleryEndpointApiGalleriesGalleryIdUnlockPost(id, body);
       setPasswordModalVisible(false);
       setPasswordValue("");
@@ -96,6 +114,26 @@ export const GalleryEditor: React.FC = () => {
       message.error(err?.response?.data?.detail ?? "Invalid password");
     } finally {
       setUnlocking(false);
+    }
+  };
+
+  // Download gallery zip (uses axios for blob)
+  const downloadGallery = async () => {
+    if (!id) return;
+    try {
+      const resp = await GalleryService.downloadGalleryRouteApiGalleriesGalleryIdDownloadGet(id);
+      const blob = new Blob([resp.data], { type: "application/zip" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `gallery-${id}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(a.href);
+      message.success("Download started");
+    } catch (err) {
+      console.error("download failed", err);
+      message.error("Download failed");
     }
   };
 
@@ -125,15 +163,36 @@ export const GalleryEditor: React.FC = () => {
 
   return (
     <div>
-      <h2 style={{ marginBottom: 12 }}>Gallery Editor</h2>
+      {/* Title + controls styled similar to Galleries page */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <h2 style={{ margin: 0 }}>Gallery Editor</h2>
+          <Tooltip title="Gallery ID">
+            <div style={{ color: "#888", fontSize: 12 }}>#{id}</div>
+          </Tooltip>
+        </div>
+
+        <Space>
+          <Button icon={<ReloadOutlined />} onClick={fetchPhotos}>Refresh</Button>
+          <Button icon={<DownloadOutlined />} onClick={downloadGallery}>Download ZIP</Button>
+          <Button
+            icon={<PictureFilled />}
+            onClick={() => {
+              // quick open first image in new tab if present
+              const first = photos[0];
+              const originalUrl = resolveUrl(first?.path_original);
+              if (originalUrl) window.open(originalUrl, "_blank");
+              else message.info("No images to preview");
+            }}
+          >
+            Preview
+          </Button>
+        </Space>
+      </div>
 
       <UploadDropzone galleryId={id!} onComplete={fetchPhotos} />
 
       <div style={{ marginTop: 18 }}>
-        <Space style={{ marginBottom: 12 }}>
-          <Button onClick={fetchPhotos}>Refresh</Button>
-        </Space>
-
         {loading ? (
           <div style={{ display: "flex", justifyContent: "center", padding: 40 }}>
             <Spin size="large" />
@@ -141,7 +200,7 @@ export const GalleryEditor: React.FC = () => {
         ) : photos.length === 0 ? (
           <Empty description="No photos in this gallery" />
         ) : (
-          <Row gutter={[12, 12]}>
+          <Row gutter={[16, 16]}>
             {photos.map((p) => {
               const thumbUrl = resolveUrl(p.path_thumb ?? p.path_preview ?? p.path_original);
               const originalUrl = resolveUrl(p.path_original);
@@ -149,31 +208,46 @@ export const GalleryEditor: React.FC = () => {
                 <Col key={p.id} xs={24} sm={12} md={8} lg={6} xl={4}>
                   <Card
                     hoverable
-                    style={{ width: 220 }}
                     cover={
                       thumbUrl ? (
-                        <img
-                          alt={p.filename}
-                          src={thumbUrl}
-                          style={{ height: 140, objectFit: "cover", width: "100%" }}
-                          onClick={() => {
-                            if (originalUrl) window.open(originalUrl, "_blank");
-                          }}
-                        />
+                        <div style={{ position: "relative" }}>
+                          <img
+                            alt={p.filename}
+                            src={thumbUrl}
+                            style={{ height: 160, objectFit: "cover", width: "100%" }}
+                          />
+                          {/* small overlay for actions when hovering */}
+                        </div>
                       ) : (
-                        <div style={{ height: 140, display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f5f5" }}>
+                        <div style={{ height: 160, display: "flex", alignItems: "center", justifyContent: "center", background: "#f5f5f5" }}>
                           <span style={{ color: "#999" }}>No image</span>
                         </div>
                       )
                     }
+                    bodyStyle={{ padding: 10 }}
+                    style={{ borderRadius: 8 }}
                     actions={[
-                      <Button key="cover" type="link" onClick={() => setCover(p.id)}>Set Cover</Button>,
+                      <Tooltip title="Set as cover" key="cover">
+                        <Button type="text" onClick={() => setCover(p.id)}><SettingOutlined /></Button>
+                      </Tooltip>,
                       <Popconfirm key="delete" title="Delete photo?" onConfirm={() => deletePhoto(p.id)} okText="Yes" cancelText="No">
-                        <Button type="link" danger>Delete</Button>
+                        <Button type="text" danger>Delete</Button>
                       </Popconfirm>
                     ]}
                   >
-                    <Card.Meta title={p.filename} description={p.is_cover ? "Cover" : undefined} />
+                    <Card.Meta
+                      title={p.filename}
+                      description={
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div style={{ fontSize: 12, color: p.is_cover ? "#389e0d" : "#666" }}>
+                            {p.is_cover ? "Cover" : ""}
+                          </div>
+                          <div>
+                            <Button type="link" size="small" onClick={() => originalUrl && window.open(originalUrl, "_blank")}>Open</Button>
+                          </div>
+                        </div>
+                      }
+                    />
                   </Card>
                 </Col>
               );
@@ -181,6 +255,17 @@ export const GalleryEditor: React.FC = () => {
           </Row>
         )}
       </div>
+
+      <Modal
+        title="Enter gallery password"
+        open={passwordModalVisible}
+        onOk={unlockGallery}
+        onCancel={() => setPasswordModalVisible(false)}
+        okText="Unlock"
+        confirmLoading={unlocking}
+      >
+        <Input.Password placeholder="Password" value={passwordValue} onChange={(e) => setPasswordValue(e.target.value)} />
+      </Modal>
     </div>
   );
 };
