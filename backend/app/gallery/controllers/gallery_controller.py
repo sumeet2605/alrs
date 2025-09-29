@@ -1,5 +1,5 @@
 # backend/app/routes/galleries.py
-from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPException, status  # type:ignore
+from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPException, status, Response, Request  # type:ignore
 from typing import List, Optional
 from sqlalchemy.orm import Session  # type:ignore
 from app.database import get_db
@@ -10,36 +10,12 @@ import uuid
 from app.gallery.schemas.gallery_schema import GalleryCreate
 from app.gallery.models.gallery_model import Gallery, Photo
 from app.gallery.services import gallery_service as crud
-from app.auth.services.dependencies import get_current_user
+from app.auth.services.dependencies import get_current_user, get_optional_current_user
+from app.auth.utils.password_hasher import get_password_hash as hash_password, verify_password
+from app.gallery.utils.tokens import create_gallery_access_token, verify_gallery_access_token
 from pathlib import Path
 
 router = APIRouter(tags=["Gallery"])
-
-def file_path_to_web_path(p: Optional[str]) -> Optional[str]:
-    """
-    Convert a stored filesystem path (or already relative web path) into the web-accessible path.
-    - If p is None -> returns None
-    - If p already begins with '/media' -> return as-is
-    - If p lies under config.MEDIA_ROOT -> return '/media/<relative path>'
-    - Otherwise return p (best effort, may be absolute filesystem path which frontend can't load)
-    """
-    if not p:
-        return None
-    try:
-        # already a web path
-        if isinstance(p, str) and p.startswith("/media"):
-            return p
-        media_root = Path(str(config.MEDIA_ROOT)).resolve()
-        p_path = Path(p).resolve()
-        # if file under media root -> convert to /media/...
-        try:
-            rel = p_path.relative_to(media_root)
-            return f"/media/{rel.as_posix()}"
-        except Exception:
-            # not under media root; fallback to return p as-is
-            return p
-    except Exception:
-        return p
 
 @router.post("/galleries", status_code=201)
 def create_gallery(payload: GalleryCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
@@ -49,48 +25,8 @@ def create_gallery(payload: GalleryCreate, db: Session = Depends(get_db), user=D
 
 @router.get("/galleries")
 def list_galleries(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    galleries = crud.get_galleries_for_owner(db, user.id)
-    out = []
-    for g in galleries:
-        cover = db.query(Photo).filter(Photo.gallery_id == g.id, Photo.is_cover == True).first()
-        if not cover:
-            # fallback: pick the earliest uploaded photo in the gallery
-            cover = db.query(Photo).filter(Photo.gallery_id == g.id).order_by(Photo.uploaded_at.asc()).first()
-        cover_photo_obj = None
-        cover_url = None
-        if cover:
-            cover_photo_obj = {
-                "id": str(cover.id),
-                "file_id": getattr(cover, "file_id", None),
-                "filename": cover.filename,
-                "path_original": cover.path_original,
-                "path_preview": cover.path_preview,
-                "path_thumb": cover.path_thumb,
-                "width": cover.width,
-                "height": cover.height,
-                "is_cover": bool(cover.is_cover),
-            }
-            # Prefer thumb -> preview -> original (converted to web path)
-            cover_url = (
-                file_path_to_web_path(cover.path_thumb)
-                or file_path_to_web_path(cover.path_preview)
-                or file_path_to_web_path(cover.path_original)
-            )
-
-        # Build gallery dict. If crud returned ORM objects, convert essential fields.
-        # Try to be minimal and not rely on Pydantic models here.
-        gallery_obj = {
-            "id": str(g.id),
-            "title": getattr(g, "title", None),
-            "description": getattr(g, "description", None),
-            "is_public": bool(getattr(g, "is_public", False)),
-            "created_at": getattr(g, "created_at", None),
-            # include the cover details
-            "cover_photo": cover_photo_obj,
-            "cover_url": cover_url,
-        }
-        out.append(gallery_obj)
-
+    
+    out = crud.get_galleries_for_owner_with_cover(db, user.id)
     return {"galleries": out}
 
 
@@ -208,8 +144,55 @@ async def upload_photos(
     return {"photos": created}
 
 
+@router.post("/galleries/{gallery_id}/password", status_code=200)
+def set_gallery_password_endpoint(gallery_id: str, payload: dict, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """
+    Owner-only endpoint to set or remove a password for a gallery.
+    payload: { "password": "..." }  or { "password": null } to remove
+    """
+    password = payload.get("password") if isinstance(payload, dict) else None
+    try:
+        gallery = crud.set_gallery_password(db, gallery_id=str(gallery_id), owner_id=str(user.id), password=password)
+        return {"ok": True, "gallery_id": str(gallery.id), "protected": bool(gallery.password_hash)}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    
+
+@router.post("/galleries/{gallery_id}/unlock", status_code=200)
+def unlock_gallery_endpoint(gallery_id: str, body: dict, response: Response, db: Session = Depends(get_db)):
+    """
+    Client submits { "password": "..." }. If correct, server sets a short-lived cookie to allow access.
+    Returns {"ok": True} on success.
+    Cookie name: gallery_access_{gallery_id}
+    """
+    password = body.get("password") if isinstance(body, dict) else None
+    if password is None:
+        raise HTTPException(status_code=400, detail="Password required")
+
+    ok = crud.verify_gallery_password(db, gallery_id=str(gallery_id), password=password)
+    if not ok:
+        raise HTTPException(status_code=403, detail="Invalid password")
+
+    # create signed short-lived token and set cookie
+    token = create_gallery_access_token(str(gallery_id))
+    cookie_name = f"gallery_access_{gallery_id}"
+    response.set_cookie(cookie_name, token, httponly=True, max_age=60*60, samesite="lax", path="/")
+    return {"ok": True}
+
 @router.get("/galleries/{gallery_id}/photos")
-def list_photos(gallery_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
+def list_photos(gallery_id: str,request: Request, db: Session = Depends(get_db), user=Depends(get_optional_current_user)):
+    gallery = db.query(Gallery).filter(Gallery.id == gallery_id).first()
+    if not gallery:
+        raise HTTPException(status_code=404, detail="Gallery not found")
+    if not gallery.is_public:
+        # Owner may view
+        if user and getattr(user, "id", None) == gallery.owner_id:
+            pass
+        else:
+            cookie_name = f"gallery_access_{gallery_id}"
+            token = request.cookies.get(cookie_name)
+            if not token or not verify_gallery_access_token(token, gallery_id):
+                raise HTTPException(status_code=401, detail="Unauthorized - gallery is password protected")
     photos = crud.list_photos(db, gallery_id)
     out = []
     for p in photos:
@@ -293,3 +276,4 @@ def set_photo_as_cover(
     db.commit()
 
     return {"detail": "Cover set", "photo_id": photo.id}
+

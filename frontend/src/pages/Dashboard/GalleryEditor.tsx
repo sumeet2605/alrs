@@ -25,6 +25,11 @@ export const GalleryEditor: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(false);
+    
+    // password prompt state
+  const [passwordModalVisible, setPasswordModalVisible] = useState(false);
+  const [passwordValue, setPasswordValue] = useState("");
+  const [unlocking, setUnlocking] = useState(false);
 
   const resolveUrl = useCallback((url?: string | null) => {
     if (!url) return undefined;
@@ -56,8 +61,15 @@ export const GalleryEditor: React.FC = () => {
       }
       setPhotos(list);
     } catch (err) {
-      console.error("fetch photos", err);
-      message.error("Failed to load photos");
+        console.error("fetch photos", err);
+        const status = err?.response?.status ?? err?.status;
+        if (status === 401 || status === 403) {
+            // show password prompt modal to attempt unlock
+            setPasswordModalVisible(true);
+            message.info("This gallery is password protected. Please enter the password to view.");
+      } else {
+        message.error("Failed to load photos");
+      }
     } finally {
       setLoading(false);
     }
@@ -66,6 +78,26 @@ export const GalleryEditor: React.FC = () => {
   useEffect(() => {
     fetchPhotos();
   }, [fetchPhotos]);
+    
+    const unlockGallery = async () => {
+    if (!id) return;
+    setUnlocking(true);
+    try {
+        // POST to unlock endpoint - server will set cookie if success
+        const body = { password: passwordValue };
+      await GalleryService.unlockGalleryEndpointApiGalleriesGalleryIdUnlockPost(id, body);
+      setPasswordModalVisible(false);
+      setPasswordValue("");
+      message.success("Unlocked gallery. Loading photos...");
+      // refetch now that cookie is set
+      await fetchPhotos();
+    } catch (err: any) {
+      console.error("unlock failed", err);
+      message.error(err?.response?.data?.detail ?? "Invalid password");
+    } finally {
+      setUnlocking(false);
+    }
+  };
 
   const deletePhoto = async (photoId: string) => {
     try {

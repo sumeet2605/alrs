@@ -137,6 +137,60 @@ export class GalleryService {
         });
     }
 
+    /**
+     * Set Gallery Password Endpoint
+     * Owner-only endpoint to set or remove a password for a gallery.
+     * payload: { "password": "..." }  or { "password": null } to remove
+     * @param galleryId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static setGalleryPasswordEndpointApiGalleriesGalleryIdPasswordPost(
+        galleryId: string,
+        requestBody: Record<string, any>,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/galleries/{gallery_id}/password',
+            path: {
+                'gallery_id': galleryId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Unlock Gallery Endpoint
+     * Client submits { "password": "..." }. If correct, server sets a short-lived cookie to allow access.
+     * Returns {"ok": True} on success.
+     * Cookie name: gallery_access_{gallery_id}
+     * @param galleryId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static unlockGalleryEndpointApiGalleriesGalleryIdUnlockPost(
+        galleryId: string,
+        requestBody: Record<string, any>,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/galleries/{gallery_id}/unlock',
+            path: {
+                'gallery_id': galleryId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    
     /**     
     * Delete Photo         
     * @param galleryId

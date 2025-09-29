@@ -5,11 +5,15 @@ from app.database import get_db
 from app.auth.services import user_service, auth_service
 from app.auth.models.user_model import User
 from app.auth.models.role_model import Role
-from typing import Annotated
+from typing import Annotated, Optional
 from fastapi.security import OAuth2PasswordBearer #type: ignore
 
 # This dependency extracts the token from the request header
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login",  auto_error=True)
+
+# Optional OAuth2 scheme for endpoints where token is optional (won't auto-raise)
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/login", auto_error=False)
+
 
 def get_current_user(
     token: Annotated[str, Depends(oauth2_scheme)],
@@ -32,6 +36,29 @@ def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User not found."
         )
+    return user
+
+def get_optional_current_user(
+    token: Annotated[Optional[str], Depends(oauth2_scheme_optional)],
+    db: Session = Depends(get_db)
+) -> Optional[User]:
+    """
+    Returns the user object if a valid auth token is provided, otherwise returns None.
+    Uses oauth2_scheme_optional (auto_error=False) so missing token does NOT raise.
+    """
+    if not token:
+        return None
+
+    try:
+        # reuse existing get_current_user logic but avoid double-dependency
+        token_data = auth_service.decode_token(token)
+    except Exception:
+        # token invalid -> behave as unauthenticated
+        return None
+
+    user = user_service.get_user_by_username(token_data.username, db)
+    if not user:
+        return None
     return user
 
 def has_permission(permission_name: str):
