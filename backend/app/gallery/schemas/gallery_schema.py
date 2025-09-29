@@ -8,16 +8,7 @@ class GalleryCreate(BaseModel):
     description: Optional[str] = None
     is_public: Optional[bool] = False
 
-class GalleryOut(BaseModel):
-    id: str
-    owner_id: str
-    title: str
-    description: Optional[str]
-    is_public: bool
-    created_at: datetime
 
-    class Config:
-        from_attributes = True
 
 class PhotoOut(BaseModel):
     # allow either int or str for id
@@ -35,3 +26,15 @@ class PhotoOut(BaseModel):
     model_config = {
         "from_attributes": True,  # pydantic v2 ORM mode
     }
+
+class GalleryOut(BaseModel):
+    id: str
+    owner_id: str
+    title: str
+    description: Optional[str]
+    is_public: bool
+    created_at: datetime
+    cover_photo: Optional[PhotoOut] = None
+
+    class Config:
+        from_attributes = True

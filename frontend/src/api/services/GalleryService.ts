@@ -137,27 +137,57 @@ export class GalleryService {
         });
     }
 
+    /**     
+    * Delete Photo         
+    * @param galleryId
+    * @param photoId
+    * @returns void
+    * @throws ApiError
+    */
+    public static deletePhotoApiGalleriesGalleryIdPhotosPhotoIdDelete(
+        galleryId: string,
+        photoId: string,
+    ): CancelablePromise<void> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/galleries/{gallery_id}/photos/{photo_id}',
+            path: {
+                'gallery_id': galleryId,
+                'photo_id': photoId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    
     /**
-         * Delete Photo
-         * @param galleryId
-         * @param photoId
-         * @returns void
-         * @throws ApiError
-         */
-        public static deletePhotoApiGalleriesGalleryIdPhotosPhotoIdDelete(
-            galleryId: string,
-            photoId: string,
-        ): CancelablePromise<void> {
-            return __request(OpenAPI, {
-                method: 'DELETE',
-                url: '/api/galleries/{gallery_id}/photos/{photo_id}',
-                path: {
-                    'gallery_id': galleryId,
-                    'photo_id': photoId,
-                },
-                errors: {
-                    422: `Validation Error`,
-                },
-            });
-        }
+     * Set Photo As Cover
+     * Set a photo as the gallery cover. This will:
+     * - validate gallery/photo ownership
+     * - unset any other photo.is_cover in the gallery
+     * - set this photo.is_cover = True
+     * - optionally update gallery.cover_photo_id (if you added that column)
+     * @param galleryId
+     * @param photoId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static setPhotoAsCoverApiGalleriesGalleryIdPhotosPhotoIdCoverPost(
+        galleryId: string,
+        photoId: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/galleries/{gallery_id}/photos/{photo_id}/cover',
+            path: {
+                'gallery_id': galleryId,
+                'photo_id': photoId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    
 }

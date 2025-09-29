@@ -80,7 +80,7 @@ export const GalleryEditor: React.FC = () => {
 
   const setCover = async (photoId: string) => {
     try {
-      await axios.post(`/api/galleries/${id}/photos/${photoId}/cover`, {}, { withCredentials: true });
+      await GalleryService.setPhotoAsCoverApiGalleriesGalleryIdPhotosPhotoIdCoverPost(id, photoId);
       message.success("Cover set");
       fetchPhotos();
     } catch (err) {

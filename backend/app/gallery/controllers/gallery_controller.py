@@ -1,6 +1,6 @@
 # backend/app/routes/galleries.py
 from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPException, status  # type:ignore
-from typing import List
+from typing import List, Optional
 from sqlalchemy.orm import Session  # type:ignore
 from app.database import get_db
 from app import config, images
@@ -15,6 +15,31 @@ from pathlib import Path
 
 router = APIRouter(tags=["Gallery"])
 
+def file_path_to_web_path(p: Optional[str]) -> Optional[str]:
+    """
+    Convert a stored filesystem path (or already relative web path) into the web-accessible path.
+    - If p is None -> returns None
+    - If p already begins with '/media' -> return as-is
+    - If p lies under config.MEDIA_ROOT -> return '/media/<relative path>'
+    - Otherwise return p (best effort, may be absolute filesystem path which frontend can't load)
+    """
+    if not p:
+        return None
+    try:
+        # already a web path
+        if isinstance(p, str) and p.startswith("/media"):
+            return p
+        media_root = Path(str(config.MEDIA_ROOT)).resolve()
+        p_path = Path(p).resolve()
+        # if file under media root -> convert to /media/...
+        try:
+            rel = p_path.relative_to(media_root)
+            return f"/media/{rel.as_posix()}"
+        except Exception:
+            # not under media root; fallback to return p as-is
+            return p
+    except Exception:
+        return p
 
 @router.post("/galleries", status_code=201)
 def create_gallery(payload: GalleryCreate, db: Session = Depends(get_db), user=Depends(get_current_user)):
@@ -24,7 +49,49 @@ def create_gallery(payload: GalleryCreate, db: Session = Depends(get_db), user=D
 
 @router.get("/galleries")
 def list_galleries(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    return crud.get_galleries_for_owner(db, user.id)
+    galleries = crud.get_galleries_for_owner(db, user.id)
+    out = []
+    for g in galleries:
+        cover = db.query(Photo).filter(Photo.gallery_id == g.id, Photo.is_cover == True).first()
+        if not cover:
+            # fallback: pick the earliest uploaded photo in the gallery
+            cover = db.query(Photo).filter(Photo.gallery_id == g.id).order_by(Photo.uploaded_at.asc()).first()
+        cover_photo_obj = None
+        cover_url = None
+        if cover:
+            cover_photo_obj = {
+                "id": str(cover.id),
+                "file_id": getattr(cover, "file_id", None),
+                "filename": cover.filename,
+                "path_original": cover.path_original,
+                "path_preview": cover.path_preview,
+                "path_thumb": cover.path_thumb,
+                "width": cover.width,
+                "height": cover.height,
+                "is_cover": bool(cover.is_cover),
+            }
+            # Prefer thumb -> preview -> original (converted to web path)
+            cover_url = (
+                file_path_to_web_path(cover.path_thumb)
+                or file_path_to_web_path(cover.path_preview)
+                or file_path_to_web_path(cover.path_original)
+            )
+
+        # Build gallery dict. If crud returned ORM objects, convert essential fields.
+        # Try to be minimal and not rely on Pydantic models here.
+        gallery_obj = {
+            "id": str(g.id),
+            "title": getattr(g, "title", None),
+            "description": getattr(g, "description", None),
+            "is_public": bool(getattr(g, "is_public", False)),
+            "created_at": getattr(g, "created_at", None),
+            # include the cover details
+            "cover_photo": cover_photo_obj,
+            "cover_url": cover_url,
+        }
+        out.append(gallery_obj)
+
+    return {"galleries": out}
 
 
 def save_upload_fileobj(upload_file: UploadFile, dest: Path):
@@ -185,3 +252,44 @@ def delete_photo(
     db.delete(photo)
     db.commit()
     return {"detail": "Photo deleted"}
+
+
+@router.post("/galleries/{gallery_id}/photos/{photo_id}/cover", status_code=200)
+def set_photo_as_cover(
+    gallery_id: str,
+    photo_id: str,
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    """
+    Set a photo as the gallery cover. This will:
+    - validate gallery/photo ownership
+    - unset any other photo.is_cover in the gallery
+    - set this photo.is_cover = True
+    - optionally update gallery.cover_photo_id (if you added that column)
+    """
+    # validate gallery exists and belongs to user
+    gallery = db.query(Gallery).filter(Gallery.id == gallery_id).first()
+    if not gallery:
+        raise HTTPException(status_code=404, detail="Gallery not found")
+    if gallery.owner_id != user.id:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    # find the photo
+    photo = db.query(Photo).filter(Photo.id == photo_id, Photo.gallery_id == gallery_id).first()
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    # unset any existing cover(s) in this gallery
+    db.query(Photo).filter(Photo.gallery_id == gallery_id, Photo.is_cover == True).update({ "is_cover": False })
+    db.commit()
+
+    # set this one
+    photo.is_cover = True
+    db.add(photo)
+    # if you want to store cover_photo_id on gallery, update it here:
+    # gallery.cover_photo_id = photo.id
+    # db.add(gallery)
+    db.commit()
+
+    return {"detail": "Cover set", "photo_id": photo.id}

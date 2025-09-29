@@ -5,6 +5,7 @@ import { GalleryCard } from "../../components/GalleryCard";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { GalleryService } from "../../api/services/GalleryService";
 import type { GalleryCreate } from "../../api/models/GalleryCreate";
+import { OpenAPI } from "../../api/core/OpenAPI";
 
 type Gallery = {
   id: string;
@@ -27,6 +28,14 @@ export const GalleryList: React.FC = () => {
 
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // helper to resolve relative URLs against OpenAPI base
+  const resolveUrl = useCallback((url?: string | null) => {
+    if (!url) return null;
+    if (url.startsWith("http://") || url.startsWith("https://")) return url;
+    const base = (OpenAPI.BASE ?? "").replace(/\/$/, "");
+    return `${base}${url}`;
+  }, []);
 
   const fetchGalleries = useCallback(async () => {
     setLoading(true);
@@ -53,8 +62,6 @@ export const GalleryList: React.FC = () => {
     if (newParam === "true") {
       setIsModalOpen(true);
     }
-    // don't add setIsModalOpen/searchParams to deps intentionally beyond searchParams
-    // so it runs whenever query changes
   }, [searchParams]);
 
   // Close modal and remove ?new param
@@ -62,15 +69,12 @@ export const GalleryList: React.FC = () => {
     setIsModalOpen(false);
     setTitle("");
     setDesc("");
-    // remove the 'new' query param without changing other params
     searchParams.delete("new");
     setSearchParams(searchParams, { replace: true });
-    // ensure url stays at /dashboard/galleries
     navigate("/dashboard/galleries", { replace: true });
   };
 
   const openModal = () => {
-    // set query param when user opens modal manually so behavior is consistent
     setSearchParams({ new: "true" }, { replace: true });
     setIsModalOpen(true);
   };
@@ -82,7 +86,6 @@ export const GalleryList: React.FC = () => {
       const payload: GalleryCreate = { title, description: desc, is_public: false };
       const resp = await GalleryService.createGalleryApiGalleriesPost(payload);
       message.success("Gallery created");
-      // refresh list and close modal
       await fetchGalleries();
       const created = resp as any;
       const newId = created?.id;
@@ -107,12 +110,16 @@ export const GalleryList: React.FC = () => {
       <Row gutter={[16, 16]}>
         {galleries.map((g) => (
           <Col key={g.id}>
-            <GalleryCard id={g.id} title={g.title} coverUrl={g.cover_url} description={g.description ?? ""} />
+            <GalleryCard
+              id={g.id}
+              title={g.title}
+              coverUrl={resolveUrl(g.cover_url)}
+              description={g.description ?? ""}
+            />
           </Col>
         ))}
       </Row>
 
-      {/* Controlled AntD Modal (v5-friendly usage) */}
       <Modal
         title="Create gallery"
         open={isModalOpen}
