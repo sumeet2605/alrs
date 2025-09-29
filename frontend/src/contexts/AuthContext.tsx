@@ -5,6 +5,7 @@ import type { Body_user_login_api_login_post } from '../api/models/Body_user_log
 import type { Token } from '../api/models/Token';
 import { AuthenticationService } from '../api/services/AuthenticationService';
 import { OpenAPI } from '../api/core/OpenAPI';
+import axios from 'axios';
 
 // --- 1. Define Context State Type ---
 interface AuthContextType {
@@ -22,7 +23,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // --- Helpers ---
-const ACCESS_KEY = 'token';
+const ACCESS_KEY = 'access_token';
 
 // set OpenAPI token helper
 function setOpenApiToken(token: string | null) {
@@ -54,13 +55,23 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }>>([]);
 
   // --- Utilities ---
-  const clearTokensLocal = useCallback(() => {
-    try {
-      localStorage.removeItem(ACCESS_KEY);
-    } catch {}
-    setAccessToken(null);
-    setOpenApiToken(null);
-  }, []);
+   const clearTokensLocal = useCallback(() => {
+      try {
+        localStorage.removeItem(ACCESS_KEY);
+      } catch {}
+      setAccessToken(null);
+      setOpenApiToken(null);
+      // also clear axios global header if set
+      try {
+        // require dynamically to avoid bundler ordering issues in some setups
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        // @ts-ignore
+        const axios = require('axios');
+          if (axios && axios.defaults && axios.defaults.headers?.common) {
+            delete axios.defaults.headers.common['Authorization'];
+          }
+      } catch {}
+    }, []);
 
   const logout = useCallback(() => {
     // Keep same behavior: clear tokens client-side and OpenAPI
@@ -74,10 +85,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       try { localStorage.setItem(ACCESS_KEY, access); } catch {}
       setAccessToken(access);
       setOpenApiToken(access);
+      // set global axios header so other code/interceptor sees it immediately
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        // @ts-ignore
+        const axios = require('axios');
+        if (axios && axios.defaults && axios.defaults.headers) {
+          axios.defaults.headers.common['Authorization'] = `Bearer ${access}`;
+        }
+      } catch {}
     } else {
       try { localStorage.removeItem(ACCESS_KEY); } catch {}
       setAccessToken(null);
       setOpenApiToken(null);
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        // @ts-ignore
+        const axios = require('axios');
+        if (axios && axios.defaults && axios.defaults.headers?.common) {
+          delete axios.defaults.headers.common['Authorization'];
+        }
+      } catch {}
     }
   }, []);
 

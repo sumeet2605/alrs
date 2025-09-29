@@ -40,14 +40,11 @@ export class AuthenticationService {
      * @throws ApiError
      */
     public static refreshTokenApiRefreshPost(
-        refreshCookie?: (string | null),
     ): CancelablePromise<Token> {
         return __request(OpenAPI, {
             method: 'POST',
             url: '/api/refresh',
-            cookies: {
-                'refresh_cookie': refreshCookie,
-            },
+            withCredentials: true,
             errors: {
                 422: `Validation Error`,
             },

@@ -7,17 +7,8 @@ import { ConfigProvider } from 'antd';
 import { ThemeProvider } from '@mui/material/styles';
 import { createTheme } from '@mui/material/styles';
 import { AuthProvider } from './contexts/AuthContext.tsx'; // To be created next
-import { initAuthInterceptors } from './api/core/interceptors';
 
 
-initAuthInterceptors(() => { 
-  try {
-    localStorage.removeItem('access_token');
-  } catch (error) {
-    console.error('Error removing access token from localStorage:', error);
-  }
-  window.location.href = '/login'; // Redirect to login page
-})
 // 1. Define a simple, custom MUI theme (you can elaborate on this later)
 const customMuiTheme = createTheme({
   palette: {

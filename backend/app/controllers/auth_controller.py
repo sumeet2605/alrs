@@ -72,7 +72,7 @@ def refresh_token(
     
     # 1. Decode and validate the refresh token
     token_data = auth_service.decode_token(refresh_token)
-    print(token_data)
+    # print(token_data)
     
     jti = token_data.jti if hasattr(token_data, "jti") else getattr(token_data, "jti", None)
     # verify DB record
@@ -104,10 +104,9 @@ def refresh_token(
         secure=False,  # For local development
         samesite="lax"  # For local development
     )
-    rt.revoked = True
     db.add(rt)
     db.commit()
-    return {"access_token": new_access_token, "refresh_token": None, "token_type": "bearer"}
+    return {"access_token": new_access_token, "token_type": "bearer"}
 
 @router.get("/me", response_model=UserResponse, summary="Get Current User", status_code=status.HTTP_200_OK)
 def get_current_user(
@@ -117,7 +116,7 @@ def get_current_user(
     """
     Retrieves the currently authenticated user's information based on the provided JWT.
     """
-    print(token)
+    # print(token)
     # 1. Decode and validate the access token
     token_data = auth_service.decode_token(token)
     
