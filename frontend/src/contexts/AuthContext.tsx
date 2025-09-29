@@ -130,7 +130,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     setIsRefreshing(true);
     try {
       // Cookie-based refresh: ensure credentials are sent
-      const tokenData: Token = await AuthenticationService.refreshTokenApiRefreshPost(undefined, { withCredentials: true });
+      const tokenData: Token = await AuthenticationService.refreshTokenApiRefreshPost();
       if (tokenData && tokenData.access_token) {
         storeTokens(tokenData.access_token);
         // flush pending queue: retry all queued requests

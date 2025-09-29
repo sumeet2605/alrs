@@ -19,8 +19,11 @@ export type { Token } from './models/Token';
 export type { UserRegistration } from './models/UserRegistration';
 export type { UserResponse } from './models/UserResponse';
 export type { ValidationError } from './models/ValidationError';
+export type { Body_upload_photos_api_galleries__gallery_id__photos_post } from './models/Body_upload_photos_api_galleries__gallery_id__photos_post';
+export type { GalleryCreate } from './models/GalleryCreate';
 
 export { AdminService } from './services/AdminService';
 export { AuthenticationService } from './services/AuthenticationService';
 export { DefaultService } from './services/DefaultService';
 export { UsersService } from './services/UsersService';
+export { GalleryService } from './services/GalleryService';

@@ -2,8 +2,8 @@
 from fastapi import FastAPI # type: ignore
 from fastapi.middleware.cors import CORSMiddleware # type: ignore
 from app.database import get_db, init_db
-from app.controllers import user_controller, auth_controller, admin_controller
-from app.services.user_service import create_super_admin
+from app.auth.controllers import user_controller, auth_controller, admin_controller
+from app.auth.services.user_service import create_super_admin
 from os import getenv
 from dotenv import load_dotenv # type: ignore
 from app.startup import lifespan
@@ -14,6 +14,9 @@ from slowapi.middleware import SlowAPIMiddleware # type: ignore
 from slowapi.errors import RateLimitExceeded # type: ignore
 from fastapi.responses import JSONResponse # type: ignore
 from app.rate_limiter import limiter
+from app.gallery.controllers import gallery_controller
+from app import config
+from starlette.staticfiles import StaticFiles #type:ignore
 load_dotenv()
 
 FRONTEND_ORIGINS = [
@@ -34,6 +37,8 @@ app.add_middleware(
 
 app.state.limiter = limiter
 
+app.mount("/media",
+          StaticFiles(directory=str(config.MEDIA_ROOT)))
 
 @app.get("/")
 async def root():
@@ -50,3 +55,4 @@ async def rate_limit_handler(request, exc):
 app.include_router(user_controller.router, prefix="/api")
 app.include_router(auth_controller.router, prefix="/api") 
 app.include_router(admin_controller.router, prefix="/api")
+app.include_router(gallery_controller.router, prefix="/api")

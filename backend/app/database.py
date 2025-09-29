@@ -22,5 +22,5 @@ def get_db():
         db.close()
 
 def init_db():
-    import app.models  # Import your models here to register them with SQLAlchemy
+    import app.auth.models  # Import your models here to register them with SQLAlchemy
     Base.metadata.create_all(bind=engine)

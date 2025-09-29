@@ -3,10 +3,11 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App.tsx';
 import { BrowserRouter } from 'react-router-dom';
-import { ConfigProvider } from 'antd';
+import { App as AntdApp, ConfigProvider } from 'antd';
 import { ThemeProvider } from '@mui/material/styles';
 import { createTheme } from '@mui/material/styles';
 import { AuthProvider } from './contexts/AuthContext.tsx'; // To be created next
+import "antd/dist/reset.css";
 
 
 // 1. Define a simple, custom MUI theme (you can elaborate on this later)
@@ -46,6 +47,7 @@ const customAntdTheme = {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
+    <AntdApp>
     <BrowserRouter>
       {/* 3. Wrap with MUI ThemeProvider */}
       <ThemeProvider theme={customMuiTheme}>
@@ -57,6 +59,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           </AuthProvider>
         </ConfigProvider>
       </ThemeProvider>
-    </BrowserRouter>
+      </BrowserRouter>
+      </AntdApp>
   </React.StrictMode>,
 );

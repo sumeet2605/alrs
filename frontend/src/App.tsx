@@ -1,9 +1,10 @@
 // src/App.tsx
+import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
 import CircularProgress from '@mui/material/CircularProgress';
 
-// Import Page Components (to be created next)
+// Import Page Components
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import DashboardPage from './pages/DashboardPage';
@@ -11,8 +12,11 @@ import AdminUsersPage from './pages/AdminUsersPage';
 import ChangePasswordPage from './pages/ChangePasswordPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
-// import NotFoundPage from './pages/NotFoundPage';
 import DefaultLayout from './components/DefaultLayout';
+import { GalleryList } from './pages/Dashboard/GalleryList';
+import { GalleryEditor } from './pages/Dashboard/GalleryEditor';
+// import NotFoundPage from './pages/NotFoundPage';
+
 // Simple Protected Route Wrapper
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated } = useAuth();
@@ -25,7 +29,6 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
 
 const App: React.FC = () => {
   const { isRefreshing } = useAuth();
-  // NOTE: You can also use a wrapper for admin roles here if needed
 
   return (
     <>
@@ -45,37 +48,40 @@ const App: React.FC = () => {
           <CircularProgress color="primary" size={60} />
         </div>
       )}
+
       <Routes>
         {/* PUBLIC ROUTES */}
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
-
         <Route path="/health" element={<p>Health Check OK</p>} />
 
-        {/* PROTECTED ROUTES */}
+        {/* PROTECTED ROUTES - DefaultLayout wraps all /dashboard routes */}
         <Route
-          path="/"
-          element={<ProtectedRoute><DefaultLayout /></ProtectedRoute>}
+          path="/dashboard"
+          element={
+            <ProtectedRoute>
+              <DefaultLayout />
+            </ProtectedRoute>
+          }
         >
-          <Route
-            path="/dashboard"
-            element={<ProtectedRoute><DashboardPage /></ProtectedRoute>}
-          />
-          <Route path="/register" element={<ProtectedRoute><RegisterPage /></ProtectedRoute>} />
-          <Route
-            path="/admin/users"
-            element={<ProtectedRoute><AdminUsersPage /></ProtectedRoute>}
-          />
-          <Route
-            path="/change-password"
-            element={<ProtectedRoute><ChangePasswordPage /></ProtectedRoute>}
-          />
+          {/* Dashboard index */}
+          <Route index element={<DashboardPage />} />
+
+          {/* Galleries (nested under /dashboard) */}
+          <Route path="galleries" element={<GalleryList />} />
+          <Route path="galleries/:id" element={<GalleryEditor />} />
+
+          {/* Other protected child routes */}
+          <Route path="register" element={<RegisterPage />} />
+          <Route path="admin/users" element={<AdminUsersPage />} />
+          <Route path="change-password" element={<ChangePasswordPage />} />
+
+          {/* You can add more nested routes here */}
         </Route>
 
-
-        {/* FALLBACK */}
+        {/* Optionally: fallback / not found */}
         {/* <Route path="*" element={<NotFoundPage />} /> */}
       </Routes>
     </>

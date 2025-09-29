@@ -2,7 +2,7 @@
 from fastapi import FastAPI # type: ignore
 from contextlib import asynccontextmanager
 from app.database import get_db, init_db
-from app.services.user_service import create_super_admin
+from app.auth.services.user_service import create_super_admin
 from os import getenv
 from dotenv import load_dotenv # type: ignore
 
