@@ -40,6 +40,27 @@ export class GalleryService {
             },
         });
     }
+
+    /**
+     * Get Gallery
+     * @param galleryId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getGalleryApiGalleriesGalleryIdGet(
+        galleryId: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/galleries/{gallery_id}',
+            path: {
+                'gallery_id': galleryId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * Upload Photos
      * @param galleryId
@@ -214,7 +235,34 @@ export class GalleryService {
             },
         });
     }
-    
+    /**
+     * Download Single Photo
+     * @param galleryId
+     * @param photoId
+     * @param size
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static downloadSinglePhotoApiGalleriesGalleryIdPhotosPhotoIdGet(
+        galleryId: string,
+        photoId: string,
+        size: string = 'original',
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/galleries/{gallery_id}/photos/{photo_id}',
+            path: {
+                'gallery_id': galleryId,
+                'photo_id': photoId,
+            },
+            query: {
+                'size': size,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
     /**
      * Set Photo As Cover
      * Set a photo as the gallery cover. This will:
@@ -245,13 +293,14 @@ export class GalleryService {
     }
     /**
      * Download Gallery Route
-     * Wrapper route that calls the download helper in app.gallery.download.
      * @param galleryId
+     * @param size
      * @returns any Successful Response
      * @throws ApiError
      */
     public static downloadGalleryRouteApiGalleriesGalleryIdDownloadGet(
         galleryId: string,
+        size: string = 'original',
     ): CancelablePromise<any> {
         return __request(OpenAPI, {
             method: 'GET',
@@ -259,26 +308,8 @@ export class GalleryService {
             path: {
                 'gallery_id': galleryId,
             },
-            errors: {
-                422: `Validation Error`,
-            },
-        });
-    }
-
-    /**
-     * Get Gallery
-     * @param galleryId
-     * @returns any Successful Response
-     * @throws ApiError
-     */
-    public static getGalleryApiGalleriesGalleryIdGet(
-        galleryId: string,
-    ): CancelablePromise<any> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/galleries/{gallery_id}',
-            path: {
-                'gallery_id': galleryId,
+            query: {
+                'size': size,
             },
             errors: {
                 422: `Validation Error`,

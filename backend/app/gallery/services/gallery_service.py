@@ -132,3 +132,7 @@ def create_photo(db: Session, gallery_id: str, filename: str, ext: str, path_ori
 
 def list_photos(db: Session, gallery_id: str):
     return db.query(models.Photo).filter(models.Photo.gallery_id == gallery_id).order_by(models.Photo.order_index).all()
+
+
+def get_photo(db: Session, gallery_id: str, photo_id: str):
+    return db.query(models.Photo).filter(models.Photo.id == photo_id).first()

@@ -1,36 +1,64 @@
-// src/utils/download.ts
 import axios from 'axios';
 import { OpenAPI } from '../api/core/OpenAPI';
 
-export async function downloadGalleryZip(galleryId: string, filename?: string) {
+/**
+ * Download the entire gallery as a ZIP file.
+ *
+ * @param galleryId  string ID
+ * @param filename   optional override for the downloaded filename
+ * @param size       optional size param: 'original' | 'large' | 'medium' | 'web'
+ */
+export async function downloadGalleryZip(
+  galleryId: string,
+  filename?: string,
+  size: string = 'original'
+) {
+    console.log(encodeURIComponent(
+    size
+  ))
   const base = (OpenAPI.BASE ?? '').replace(/\/$/, '');
-  const url = `${base}/api/galleries/${encodeURIComponent(galleryId)}/download`;
+  const url = `${base}/api/galleries/${encodeURIComponent(galleryId)}/download?size=${encodeURIComponent(
+    size
+  )}`;
 
   const headers: Record<string, string> = {};
-  if (OpenAPI.TOKEN) headers['Authorization'] = `Bearer ${OpenAPI.TOKEN}`;
+  if (OpenAPI.TOKEN) {
+    headers['Authorization'] = `Bearer ${OpenAPI.TOKEN}`;
+  }
 
   const resp = await axios.get(url, {
     headers,
-    withCredentials: !!OpenAPI.WITH_CREDENTIALS, // needed if gallery is unlocked via cookie
+    withCredentials: !!OpenAPI.WITH_CREDENTIALS,
     responseType: 'blob',
-    validateStatus: s => s >= 200 && s < 400, // surface server errors below
+    validateStatus: (s) => s >= 200 && s < 400,
   });
 
-  // If server accidentally sent JSON error, guard here
-  const contentType = resp.headers['content-type'] || '';
-  if (!contentType.includes('zip') && !contentType.includes('application/octet-stream')) {
-    // Try to parse the blob to show a readable error
-    const text = await resp.data.text?.().catch(() => null);
-    throw new Error(text || 'Download failed (non-zip response)');
+  const contentType = (resp.headers['content-type'] || '').toLowerCase();
+  const isZip =
+    contentType.includes('zip') ||
+    contentType.includes('application/octet-stream');
+
+  if (!isZip) {
+    // Attempt to read the blob as text so we can surface an error message
+    try {
+      const text = await new Response(resp.data).text();
+      throw new Error(text || 'Download failed: non-zip response');
+    } catch {
+      throw new Error('Download failed: non-zip response');
+    }
   }
 
+  const effectiveName = filename || `gallery-${galleryId}-${size}.zip`;
   const blob = new Blob([resp.data], { type: 'application/zip' });
   const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = filename || `gallery-${galleryId}.zip`;
+  const href = URL.createObjectURL(blob);
+
+  link.href = href;
+  link.download = effectiveName;
   document.body.appendChild(link);
   link.click();
   link.remove();
-  // Revoke after a short delay to allow the download to start
-  setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+
+  // Give the browser a moment before revoking
+  setTimeout(() => URL.revokeObjectURL(href), 2000);
 }

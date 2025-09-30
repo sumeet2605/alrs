@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi.responses import FileResponse #type:ignore
 import zipfile, tempfile, os, time
 from app import config
+from app.gallery.services.paths import downloads_dir
 
 def resolve_media_path(rel_path: str) -> Path | None:
     if not rel_path:
@@ -61,11 +62,9 @@ def check_gallery_access(db: Session, gallery_id: str, request: Request, current
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
     return gallery
 
-def download_gallery_disk(gallery_id: str, request, background_tasks: BackgroundTasks, db, current_user):
+def download_gallery_disk(gallery_id: str, request, background_tasks: BackgroundTasks, db, current_user, file_list, filename):
     # 1) access check – make sure this isn’t returning 401/403!
     check_gallery_access(db, gallery_id, request, current_user)
-
-    file_list = prepare_gallery_file_list(db, gallery_id)
     if not file_list:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No available files to download")
 
@@ -89,6 +88,25 @@ def download_gallery_disk(gallery_id: str, request, background_tasks: Background
     # Correct headers for download + correct media type
     return FileResponse(
         zip_path,
-        filename=f"gallery-{gallery_id}.zip",
+        filename=filename,
         media_type="application/zip",
     )
+
+
+def prepare_gallery_file_list_by_size(db, gallery_id: str, size: str):
+    photos = crud.list_photos(db, gallery_id)
+    out = []
+    gallery = crud.get_gallery(db, gallery_id)
+    owner_id = str(gallery.owner_id)
+
+    for p in photos:
+        if size == "original":
+            abs_path = (config.MEDIA_ROOT.parent / p.path_original.lstrip("/"))
+            arcname = os.path.basename(abs_path)
+        else:
+            dst = downloads_dir(owner_id, str(gallery_id), size) / f"{p.file_id or p.id}.jpg"
+            abs_path = dst
+            base, _ = os.path.splitext(p.filename)
+            arcname = f"{base}-{size}.jpg"
+        out.append((str(abs_path), arcname))
+    return out

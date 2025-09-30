@@ -1,5 +1,5 @@
 # backend/app/routes/galleries.py
-from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPException, status, Response, Request  # type:ignore
+from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPException, status, Response, Request, Query  # type:ignore
 from typing import List, Optional
 from sqlalchemy.orm import Session  # type:ignore
 from app.database import get_db
@@ -14,7 +14,10 @@ from app.auth.services.dependencies import get_current_user, get_optional_curren
 from app.auth.utils.password_hasher import get_password_hash as hash_password, verify_password
 from app.gallery.utils.tokens import create_gallery_access_token, verify_gallery_access_token
 from pathlib import Path
-from app.gallery.utils.download import download_gallery_disk
+from app.gallery.utils.download import download_gallery_disk, check_gallery_access, prepare_gallery_file_list_by_size
+from app.gallery.services.paths import previews_dir, thumbs_dir, downloads_dir
+from fastapi.responses import FileResponse #type: ignore
+
 
 router = APIRouter(tags=["Gallery"])
 
@@ -66,6 +69,15 @@ def process_image_pipeline(photo_file_id: str, original_abs_path: str, owner_id:
         # Build relative web paths to save in DB (what frontend will consume)
         rel_preview = f"/media/{owner_id}/{gallery_id}/previews/{photo_file_id}.jpg"
         rel_thumb = f"/media/{owner_id}/{gallery_id}/thumbs/{photo_file_id}.jpg"
+
+         # Eager: create download sizes
+        for size, longest in config.DOWNLOAD_SIZES.items():
+            if size == "original":
+                continue
+            dst_dir = downloads_dir(owner_id, gallery_id, size)
+            dst_dir.mkdir(parents=True, exist_ok=True)
+            dst = dst_dir / f"{photo_file_id}.jpg"
+            images.make_size(original_abs_path, str(dst), longest)
 
         # update DB record found by file_id (file_id is a string UUID)
         p = db.query(Photo).filter(Photo.file_id == photo_file_id).first()
@@ -307,23 +319,65 @@ def unlock_gallery(gallery_id: str, payload: dict, response: Response, db: Sessi
     )
     return {"ok": True}
 
-
 @router.get("/galleries/{gallery_id}/download")
 def download_gallery_route(
     gallery_id: str,
     request: Request,
     background_tasks: BackgroundTasks,
+    size: str = Query("original", regex="^(original|large|medium|web)$"),
     db: Session = Depends(get_db),
     current_user = Depends(get_optional_current_user),
 ):
-    """
-    Wrapper route that calls the download helper in app.gallery.download.
-    """
-    # gallery_download.download_gallery expects: (gallery_id, request, db, current_user)
+    # permission
+    check_gallery_access(db, gallery_id, request, current_user)
+
+    file_list = prepare_gallery_file_list_by_size(db, gallery_id, size)
+    if not file_list:
+        raise HTTPException(status_code=404, detail="No files")
     return download_gallery_disk(
         gallery_id=gallery_id,
         request=request,
         background_tasks=background_tasks,
         db=db,
-        current_user=current_user
+        current_user=current_user,
+        file_list=file_list,  # modify function to accept this list (or reuse existing builder)
+        filename=f"gallery-{gallery_id}-{size}.zip"
     )
+
+
+@router.get("/galleries/{gallery_id}/photos/{photo_id}")
+def download_single_photo(
+    gallery_id: str,
+    photo_id: str,
+    request: Request,
+    size: str = "original",
+    db: Session = Depends(get_db),
+    current_user = Depends(get_optional_current_user),
+):
+    # Permission: reuse your existing check from list_photos
+    gallery = crud.get_gallery(db, gallery_id)
+    if not gallery:
+        raise HTTPException(status_code=404, detail="Gallery not found")
+    check_gallery_access(db, gallery_id, request, current_user)  # implement using your logic
+
+    photo = crud.get_photo(db, gallery_id, photo_id)
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    owner_id = str(gallery.owner_id)
+    if size == "original" or size not in config.DOWNLOAD_SIZES:
+        abs_path = (config.MEDIA_ROOT.parent / photo.path_original.lstrip("/")).resolve()
+    else:
+        dst = downloads_dir(owner_id, str(gallery_id), size) / f"{photo.file_id or photo.id}.jpg"
+        abs_path = dst.resolve()
+
+    if not os.path.exists(abs_path):
+        raise HTTPException(status_code=404, detail="Requested size not available")
+
+    return FileResponse(
+        path=str(abs_path),
+        media_type="image/jpeg" if size != "original" else "application/octet-stream",
+        filename=photo.filename if size == "original" else f"{os.path.splitext(photo.filename)[0]}-{size}.jpg",
+        headers={"Cache-Control": "public, max-age=31536000"}
+    )
+

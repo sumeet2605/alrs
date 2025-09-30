@@ -8,6 +8,14 @@ MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
 
 # image sizes
 IMAGE_SIZES = {
-    "preview": 1600,
-    "thumb": 400
+    "preview": 1280,
+    "thumb": 320
+}
+
+# NEW: download sizes (longest edge)
+DOWNLOAD_SIZES = {
+    "original": None,   # special-cased
+    "large": 2048,
+    "medium": 1200,
+    "web": 1024,
 }

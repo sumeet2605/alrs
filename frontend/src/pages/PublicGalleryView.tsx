@@ -1,11 +1,25 @@
 // src/pages/PublicGalleryView.tsx
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
-import { Typography, Spin, Image, Empty, Alert, Modal, Input, Button, message } from "antd";
+import {
+  Typography,
+  Spin,
+  Image,
+  Empty,
+  Alert,
+  Modal,
+  Input,
+  Button,
+  App,
+  Tooltip,
+} from "antd";
+import { DownloadOutlined, HeartOutlined, HeartFilled } from "@ant-design/icons";
 import { GalleryService } from "../api/services/GalleryService";
 import { OpenAPI } from "../api/core/OpenAPI";
 import GalleryHeader from "./ClientGalleryHeader";
 import { downloadGalleryZip } from "../utils/download";
+import SizePicker from "../components/SizePicker";
+import axios from "axios";
 
 const { Title, Text } = Typography;
 
@@ -22,53 +36,123 @@ type Photo = {
   is_cover?: boolean | null;
 };
 
+type DownloadSize = "original" | "large" | "medium" | "web";
+
 const resolveUrl = (url?: string | null) => {
   if (!url) return null;
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
   const base = (OpenAPI.BASE ?? "").replace(/\/$/, "");
-  if (!url.startsWith("/")) url = `/${url}`;
-  return `${base}${url}`;
+  const path = url.startsWith("/") ? url : `/${url}`;
+  return `${base}${path}`;
 };
 
 const PublicGalleryView: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { message } = App.useApp();
 
   const [gallery, setGallery] = useState<any>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // lock flow
+  // lock / unlock
   const [locked, setLocked] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [passwordValue, setPasswordValue] = useState("");
 
-  // preview/slideshow
+  // preview / slideshow
   const [previewVisible, setPreviewVisible] = useState(false);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [autoplay, setAutoplay] = useState(false);
+
+  // size-picker modal
+  const [sizeModalOpen, setSizeModalOpen] = useState(false);
+  const [sizeTarget, setSizeTarget] = useState<
+    { type: "gallery" } | { type: "photo"; photo: Photo } | null
+  >(null);
+
+  // favorites (persist per-gallery)
+  const favKey = `fav_gallery_${id}`;
+  const [favorites, setFavorites] = useState<Set<string>>(() => {
+    try {
+      if (!id) return new Set();
+      const raw = localStorage.getItem(favKey);
+      if (!raw) return new Set();
+      return new Set(JSON.parse(raw));
+    } catch {
+      return new Set();
+    }
+  });
+  const saveFavorites = (next: Set<string>) => {
+    setFavorites(new Set(next));
+    try {
+      localStorage.setItem(favKey, JSON.stringify(Array.from(next)));
+    } catch {}
+  };
+  const toggleFavorite = (photoId: string) => {
+    const next = new Set(favorites);
+    if (next.has(photoId)) next.delete(photoId);
+    else next.add(photoId);
+    saveFavorites(next);
+  };
+
+  // overlay CSS — let image clicks pass through (so preview opens), but buttons are clickable
+  const overlayCSS = `
+    .photo-tile-wrap {
+      break-inside: avoid;
+      margin-bottom: 16px;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+      position: relative; /* important for overlay positioning */
+    }
+    .photo-overlay {
+      position: absolute; inset: 0;
+      display: flex; align-items: flex-start; justify-content: flex-end;
+      background: linear-gradient(to top, rgba(0,0,0,0.45), rgba(0,0,0,0.05));
+      opacity: 0; transition: opacity 180ms ease;
+      z-index: 3;
+      pointer-events: none; /* allow clicks to pass to image */
+      padding: 8px;
+    }
+    .photo-overlay-actions {
+      display: flex; gap: 8px;
+      pointer-events: auto; /* buttons are clickable */
+    }
+    .photo-tile-wrap:hover .photo-overlay { opacity: 1; }
+    .photo-icon-btn { box-shadow: 0 6px 16px rgba(0,0,0,0.25); }
+    @media (max-width: 576px) {
+      .photo-overlay { align-items: center; justify-content: center; background: rgba(0,0,0,0.35); }
+    }
+  `;
 
   const fetchAll = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     setError(null);
     try {
-      // Gallery metadata (if you don’t have this endpoint yet, you can skip it safely)
+      // Optional gallery metadata
       try {
-        // If your OpenAPI doesn’t have this method yet, remove this call.
-        // @ts-ignore
-        const g = await GalleryService.getGalleryApiGalleriesGalleryIdGet?.(id);
-        if (g) setGallery(g);
+        // @ts-expect-error optional
+        if (typeof GalleryService.getGalleryApiGalleriesGalleryIdGet === "function") {
+          // @ts-ignore
+          const g = await GalleryService.getGalleryApiGalleriesGalleryIdGet(id);
+          if (g) setGallery(g);
+        }
       } catch {
-        // optional, ignore if not implemented
+        /* ignore */
       }
 
       // Photos (401 => locked)
       const resp = await GalleryService.listPhotosApiGalleriesGalleryIdPhotosGet(id);
-      const list = Array.isArray(resp) ? resp : (resp as any)?.photos ?? (resp as any)?.data ?? [];
-      const normalized: Photo[] = list.map((p: any) => ({ ...p, id: String(p.id) }));
+      const list = Array.isArray(resp)
+        ? resp
+        : (resp as any)?.photos ?? (resp as any)?.data ?? [];
+      const normalized: Photo[] = (list || []).map((p: any) => ({
+        ...p,
+        id: String(p.id),
+      }));
       setPhotos(normalized);
-
       setLocked(false);
     } catch (err: any) {
       const status = err?.response?.status ?? err?.status;
@@ -99,13 +183,14 @@ const PublicGalleryView: React.FC = () => {
       }, 3000);
       return () => clearInterval(timer);
     }
-  }, [autoplay, previewVisible, photos]);
+  }, [autoplay, previewVisible, photos.length]);
 
   const tryUnlock = async () => {
     if (!id) return;
     try {
-      // cookie-based unlock
-      await GalleryService.unlockGalleryEndpointApiGalleriesGalleryIdUnlockPost(id, { password: passwordValue });
+      await GalleryService.unlockGalleryEndpointApiGalleriesGalleryIdUnlockPost(id, {
+        password: passwordValue,
+      });
       setPasswordModalOpen(false);
       setPasswordValue("");
       message.success("Gallery unlocked");
@@ -124,32 +209,78 @@ const PublicGalleryView: React.FC = () => {
     message.success("Share link copied");
   };
 
-  const handleDownloadAll = async () => {
-    if (!id) return;
+  // ---- Downloads ----
+  const openGalleryDownloadPicker = () => {
+    setSizeTarget({ type: "gallery" });
+    setSizeModalOpen(true);
+  };
+
+  const openPhotoDownloadPicker = (photo: Photo) => {
+    setSizeTarget({ type: "photo", photo });
+    setSizeModalOpen(true);
+  };
+
+  const handleSizeConfirm = async (size: DownloadSize) => {
+    if (!id || !sizeTarget) return;
     try {
-      const name =
-        gallery?.booking?.client?.display_name ||
-        gallery?.title ||
-        `gallery-${id}`;
-      await downloadGalleryZip(id, `${name}.zip`);
+      if (sizeTarget.type === "gallery") {
+        const name =
+          gallery?.booking?.client?.display_name ||
+          gallery?.title ||
+          `gallery-${id}`;
+        await downloadGalleryZip(id, `${name}.zip`, size);
+      } else {
+        const p = sizeTarget.photo;
+        await downloadSinglePhotoBlob(id, p.id, size, p.filename || `photo-${p.id}.jpg`);
+      }
     } catch (e: any) {
       Modal.error({
         title: "Download failed",
         content: e?.message ?? "Could not start download",
       });
+    } finally {
+      setSizeModalOpen(false);
+      setSizeTarget(null);
     }
   };
 
-  // derived display values with fallbacks
-  const displayName =
-    gallery?.booking?.client?.display_name ||
-    gallery?.title ||
-    "Gallery";
+  // Single-photo download (blob) with cookies + auth header if present
+  const downloadSinglePhotoBlob = async (
+    galleryId: string,
+    photoId: string,
+    size: DownloadSize,
+    filename: string
+  ) => {
+    const base = (OpenAPI.BASE ?? "").replace(/\/$/, "");
+    const url = `${base}/api/galleries/${encodeURIComponent(
+      galleryId
+    )}/photos/${encodeURIComponent(photoId)}?size=${encodeURIComponent(size)}`;
 
-  const displayDateRaw =
-    gallery?.booking?.event_date ||
-    gallery?.created_at ||
-    null;
+    const headers: Record<string, string> = {};
+    if (OpenAPI.TOKEN) headers["Authorization"] = `Bearer ${OpenAPI.TOKEN}`;
+
+    const resp = await axios.get(url, {
+      headers,
+      withCredentials: !!OpenAPI.WITH_CREDENTIALS,
+      responseType: "blob",
+      validateStatus: (s) => s >= 200 && s < 400,
+    });
+
+    const blob = new Blob([resp.data], { type: resp.headers["content-type"] || "image/jpeg" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(link.href), 1500);
+  };
+
+  // derived display
+  const displayName =
+    gallery?.booking?.client?.display_name || gallery?.title || "Gallery";
+
+  const displayDateRaw = gallery?.booking?.event_date || gallery?.created_at || null;
 
   const displayDate = displayDateRaw
     ? new Date(displayDateRaw).toLocaleDateString()
@@ -161,10 +292,7 @@ const PublicGalleryView: React.FC = () => {
     photos[0]?.path_original ||
     null;
 
-  const coverUrl =
-    gallery?.cover_photo_url ||
-    resolveUrl(coverFromPhotos) ||
-    null;
+  const coverUrl = gallery?.cover_photo_url || resolveUrl(coverFromPhotos) || null;
 
   if (loading) {
     return <Spin size="large" style={{ display: "block", margin: "4rem auto" }} />;
@@ -175,7 +303,9 @@ const PublicGalleryView: React.FC = () => {
       <>
         <div style={{ textAlign: "center", padding: 40 }}>
           <Title level={3}>This gallery is password protected</Title>
-          <Button type="primary" onClick={() => setPasswordModalOpen(true)}>Enter password to view</Button>
+          <Button type="primary" onClick={() => setPasswordModalOpen(true)}>
+            Enter password to view
+          </Button>
           <div style={{ marginTop: 12 }}>
             <Button onClick={copyShareLink}>Copy share link</Button>
           </div>
@@ -215,6 +345,8 @@ const PublicGalleryView: React.FC = () => {
 
   return (
     <div style={{ minHeight: "100vh", background: "#fff" }}>
+      <style>{overlayCSS}</style>
+
       {/* Hero Section */}
       {coverUrl && (
         <div
@@ -222,7 +354,7 @@ const PublicGalleryView: React.FC = () => {
             position: "relative",
             width: "100%",
             height: "60vh",
-            backgroundImage: coverUrl ? `url(${coverUrl})` : "linear-gradient(to right, #999, #555)",
+            backgroundImage: `url(${coverUrl})`,
             backgroundSize: "cover",
             backgroundPosition: "center",
           }}
@@ -259,7 +391,7 @@ const PublicGalleryView: React.FC = () => {
       <GalleryHeader
         clientName={displayName}
         studioName="Alluring Lens Studio"
-        onDownloadAll={handleDownloadAll}
+        onDownloadAll={openGalleryDownloadPicker}
         onShare={copyShareLink}
         onSlideshow={() => {
           if (photos.length > 0) {
@@ -270,7 +402,7 @@ const PublicGalleryView: React.FC = () => {
         }}
       />
 
-      {/* Photos Grid */}
+      {/* Wrap the grid INSIDE PreviewGroup so preview can control it */}
       <Image.PreviewGroup
         preview={{
           visible: previewVisible,
@@ -291,31 +423,89 @@ const PublicGalleryView: React.FC = () => {
             margin: "0 auto",
           }}
         >
-          {photos.map((p) => {
-            const src = resolveUrl(p.path_preview ?? p.path_thumb ?? p.path_original) ?? undefined;
+          {photos.map((p, index) => {
+            const src =
+              resolveUrl(p.path_preview ?? p.path_thumb ?? p.path_original) ??
+              undefined;
+            const isFav = favorites.has(p.id);
+
             return (
               <div
                 key={p.id}
-                style={{
-                  breakInside: "avoid",
-                  marginBottom: 16,
-                  borderRadius: 8,
-                  overflow: "hidden",
-                  boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
-                }}
+                className="photo-tile-wrap" // Use a class for consistency with CSS
               >
                 <Image
                   src={src}
                   alt={p.filename}
-                  style={{ width: "100%", height: "auto", display: "block" }}
-                  preview={true}
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    objectFit: "cover",
+                    display: "block",
+                  }}
+                  // Manually pass a non-resolvable URL for the `preview` property
+                  // to prevent a duplicate preview group being created for each image.
+                  // Instead, we rely on the parent <Image.PreviewGroup />.
+                  preview={{ src: resolveUrl(p.path_original) ?? src }}
+                  onClick={() => setCurrentIndex(index)}
                   placeholder
                 />
+
+                {/* Hover overlay (doesn't block image clicks) */}
+                <div className="photo-overlay">
+                  <div className="photo-overlay-actions">
+                    <Tooltip title={isFav ? "Remove favorite" : "Favorite"}>
+                      <Button
+                        className="photo-icon-btn"
+                        shape="circle"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toggleFavorite(p.id);
+                        }}
+                        icon={
+                          isFav ? (
+                            <HeartFilled style={{ color: "#ff4d4f" }} />
+                          ) : (
+                            <HeartOutlined />
+                          )
+                        }
+                      />
+                    </Tooltip>
+
+                    <Tooltip title="Download">
+                      <Button
+                        type="primary"
+                        className="photo-icon-btn"
+                        shape="circle"
+                        icon={<DownloadOutlined />}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          openPhotoDownloadPicker(p);
+                        }}
+                      />
+                    </Tooltip>
+                  </div>
+                </div>
               </div>
             );
           })}
         </div>
       </Image.PreviewGroup>
+
+      {/* Unlock modal - Moved here for clean structure, but you had it outside the main return too */}
+      {/* Retained your original placement to keep changes minimal, but typically it would go after the main content */}
+
+      {/* Size picker modal */}
+      <SizePicker
+        open={sizeModalOpen}
+        onCancel={() => {
+          setSizeModalOpen(false);
+          setSizeTarget(null);
+        }}
+        onSelect={(size: DownloadSize) => handleSizeConfirm(size)}
+      />
     </div>
   );
 };
