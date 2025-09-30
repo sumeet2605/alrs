@@ -77,6 +77,12 @@ def process_image_pipeline(photo_file_id: str, original_abs_path: str, owner_id:
     finally:
         db.close()
 
+@router.get("/galleries/{gallery_id}", status_code=200)
+async def get_gallery(
+    gallery_id: str,
+    db: Session = Depends(get_db)):
+    return crud.get_gallery(db, gallery_id)
+
 
 @router.post("/galleries/{gallery_id}/photos", status_code=201)
 async def upload_photos(

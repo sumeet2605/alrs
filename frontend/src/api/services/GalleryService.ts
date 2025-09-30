@@ -264,4 +264,25 @@ export class GalleryService {
             },
         });
     }
+
+    /**
+     * Get Gallery
+     * @param galleryId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getGalleryApiGalleriesGalleryIdGet(
+        galleryId: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/galleries/{gallery_id}',
+            path: {
+                'gallery_id': galleryId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
 }

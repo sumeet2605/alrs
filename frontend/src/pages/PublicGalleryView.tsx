@@ -1,10 +1,13 @@
 // src/pages/PublicGalleryView.tsx
 import React, { useEffect, useState, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { Typography, Spin, Image, Empty, Alert, Modal, Input, Button, message } from "antd";
 import { GalleryService } from "../api/services/GalleryService";
 import { OpenAPI } from "../api/core/OpenAPI";
-import { Row, Col, Card, Button, Input, Modal, Space, message, Spin, Empty } from "antd";
-import axios from "axios";
+import GalleryHeader from "./ClientGalleryHeader";
+import { downloadGalleryZip } from "../utils/download";
+
+const { Title, Text } = Typography;
 
 type Photo = {
   id: string;
@@ -27,142 +30,292 @@ const resolveUrl = (url?: string | null) => {
   return `${base}${url}`;
 };
 
-export const PublicGalleryView: React.FC = () => {
+const PublicGalleryView: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+
+  const [gallery, setGallery] = useState<any>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // lock flow
   const [locked, setLocked] = useState(false);
   const [passwordModalOpen, setPasswordModalOpen] = useState(false);
   const [passwordValue, setPasswordValue] = useState("");
-  const [galleryTitle, setGalleryTitle] = useState<string | null>(null);
 
-  const fetchPhotos = useCallback(async () => {
+  // preview/slideshow
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [currentIndex, setCurrentIndex] = useState(0);
+  const [autoplay, setAutoplay] = useState(false);
+
+  const fetchAll = useCallback(async () => {
     if (!id) return;
     setLoading(true);
+    setError(null);
     try {
-      // list photos: if gallery public, will return list. If locked -> 401
+      // Gallery metadata (if you don’t have this endpoint yet, you can skip it safely)
+      try {
+        // If your OpenAPI doesn’t have this method yet, remove this call.
+        // @ts-ignore
+        const g = await GalleryService.getGalleryApiGalleriesGalleryIdGet?.(id);
+        if (g) setGallery(g);
+      } catch {
+        // optional, ignore if not implemented
+      }
+
+      // Photos (401 => locked)
       const resp = await GalleryService.listPhotosApiGalleriesGalleryIdPhotosGet(id);
-      const data = resp as any;
-      const list = Array.isArray(data) ? data : data?.photos ?? data?.data ?? [];
-      const normalized = list.map((p: any) => ({ ...p, id: String(p.id) }));
+      const list = Array.isArray(resp) ? resp : (resp as any)?.photos ?? (resp as any)?.data ?? [];
+      const normalized: Photo[] = list.map((p: any) => ({ ...p, id: String(p.id) }));
       setPhotos(normalized);
+
       setLocked(false);
     } catch (err: any) {
-      console.error("fetch photos error", err);
       const status = err?.response?.status ?? err?.status;
       if (status === 401) {
-        // locked
         setLocked(true);
         setPasswordModalOpen(true);
       } else if (status === 404) {
-        message.error("Gallery not found");
-        navigate("/");
+        setError("Gallery not found or is not public.");
+      } else if (status === 410) {
+        setError("This gallery has expired and is no longer available.");
       } else {
-        message.error("Failed to load gallery");
+        setError("Failed to load gallery.");
       }
     } finally {
       setLoading(false);
     }
-  }, [id, navigate]);
+  }, [id]);
 
   useEffect(() => {
-    fetchPhotos();
-  }, [fetchPhotos]);
+    fetchAll();
+  }, [fetchAll]);
+
+  // autoplay every 3s while preview is visible
+  useEffect(() => {
+    if (autoplay && previewVisible && photos.length > 1) {
+      const timer = setInterval(() => {
+        setCurrentIndex((prev) => (prev + 1) % photos.length);
+      }, 3000);
+      return () => clearInterval(timer);
+    }
+  }, [autoplay, previewVisible, photos]);
 
   const tryUnlock = async () => {
     if (!id) return;
     try {
-      // unlock endpoint: server should set cookie on success (withCredentials)
+      // cookie-based unlock
       await GalleryService.unlockGalleryEndpointApiGalleriesGalleryIdUnlockPost(id, { password: passwordValue });
-      message.success("Gallery unlocked");
       setPasswordModalOpen(false);
       setPasswordValue("");
-      // After server sets cookie, re-fetch photos: cookie sent automatically because OpenAPI.WITH_CREDENTIALS = true
-      await fetchPhotos();
+      message.success("Gallery unlocked");
+      await fetchAll();
     } catch (err: any) {
-      console.error("unlock failed", err);
-      message.error(err?.response?.data?.detail ?? "Incorrect password");
+      Modal.error({
+        title: "Unlock failed",
+        content: err?.response?.data?.detail ?? "Incorrect password",
+      });
     }
   };
 
   const copyShareLink = () => {
-    const base = window.location.origin;
-    const path = `/g/${id}`;
-    const full = `${base}${path}`;
-    navigator.clipboard.writeText(full).then(
-      () => message.success("Share link copied"),
-      () => message.error("Copy failed")
-    );
+    const full = `${window.location.origin}/g/${id}`;
+    navigator.clipboard.writeText(full);
+    message.success("Share link copied");
   };
 
-  const downloadPhoto = async (p: Photo) => {
+  const handleDownloadAll = async () => {
+    if (!id) return;
     try {
-      const url = resolveUrl(p.path_original ?? "");
-      if (!url) {
-        message.error("Photo url not available");
-        return;
-      }
-      const resp = await axios.get(url, { responseType: "blob", withCredentials: true });
-      const blob = new Blob([resp.data], { type: resp.headers["content-type"] ?? "application/octet-stream" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = p.filename ?? `photo-${p.id}`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(a.href);
-    } catch (err) {
-      console.error("download photo", err);
-      message.error("Download failed");
+      const name =
+        gallery?.booking?.client?.display_name ||
+        gallery?.title ||
+        `gallery-${id}`;
+      await downloadGalleryZip(id, `${name}.zip`);
+    } catch (e: any) {
+      Modal.error({
+        title: "Download failed",
+        content: e?.message ?? "Could not start download",
+      });
     }
   };
 
-  if (!id) return <div>No gallery specified</div>;
-  if (loading) return <div style={{ display: "flex", justifyContent: "center", padding: 40 }}><Spin size="large" /></div>;
+  // derived display values with fallbacks
+  const displayName =
+    gallery?.booking?.client?.display_name ||
+    gallery?.title ||
+    "Gallery";
+
+  const displayDateRaw =
+    gallery?.booking?.event_date ||
+    gallery?.created_at ||
+    null;
+
+  const displayDate = displayDateRaw
+    ? new Date(displayDateRaw).toLocaleDateString()
+    : "";
+
+  const coverFromPhotos =
+    photos.find((p) => p.is_cover)?.path_preview ||
+    photos[0]?.path_preview ||
+    photos[0]?.path_original ||
+    null;
+
+  const coverUrl =
+    gallery?.cover_photo_url ||
+    resolveUrl(coverFromPhotos) ||
+    null;
+
+  if (loading) {
+    return <Spin size="large" style={{ display: "block", margin: "4rem auto" }} />;
+  }
+
   if (locked) {
     return (
       <>
         <div style={{ textAlign: "center", padding: 40 }}>
-          <h3>This gallery is password protected</h3>
+          <Title level={3}>This gallery is password protected</Title>
           <Button type="primary" onClick={() => setPasswordModalOpen(true)}>Enter password to view</Button>
           <div style={{ marginTop: 12 }}>
             <Button onClick={copyShareLink}>Copy share link</Button>
           </div>
         </div>
 
-        <Modal title="Enter gallery password" open={passwordModalOpen} onOk={tryUnlock} onCancel={() => setPasswordModalOpen(false)} okText="Unlock">
-          <Input.Password placeholder="Password" value={passwordValue} onChange={(e) => setPasswordValue(e.target.value)} />
+        <Modal
+          title="Enter gallery password"
+          open={passwordModalOpen}
+          onOk={tryUnlock}
+          okText="Unlock"
+          onCancel={() => setPasswordModalOpen(false)}
+          destroyOnClose
+        >
+          <Input.Password
+            placeholder="Password"
+            value={passwordValue}
+            onChange={(e) => setPasswordValue(e.target.value)}
+            onPressEnter={tryUnlock}
+          />
         </Modal>
       </>
     );
   }
 
-  if (!photos.length) return <Empty description="No photos in this gallery" />;
+  if (error) {
+    return (
+      <div style={{ padding: "20px", textAlign: "center" }}>
+        <Alert message="Error" description={error} type="error" showIcon />
+        <Empty description={error} />
+      </div>
+    );
+  }
+
+  if (!photos.length) {
+    return <Empty description="No photos in this gallery" />;
+  }
 
   return (
-    <div style={{ padding: 16 }}>
-      <Space style={{ marginBottom: 12 }}>
-        <Button onClick={() => window.location.href = `/dashboard/galleries/${id}`}>Open in app</Button>
-        <Button type="primary" onClick={copyShareLink}>Copy share link</Button>
-      </Space>
+    <div style={{ minHeight: "100vh", background: "#fff" }}>
+      {/* Hero Section */}
+      {coverUrl && (
+        <div
+          style={{
+            position: "relative",
+            width: "100%",
+            height: "60vh",
+            backgroundImage: coverUrl ? `url(${coverUrl})` : "linear-gradient(to right, #999, #555)",
+            backgroundSize: "cover",
+            backgroundPosition: "center",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "rgba(0,0,0,0.4)",
+            }}
+          />
+          <div
+            style={{
+              position: "absolute",
+              bottom: "20%",
+              left: "50%",
+              transform: "translateX(-50%)",
+              color: "#fff",
+              textAlign: "center",
+              padding: "0 16px",
+            }}
+          >
+            <Title style={{ color: "#fff", fontSize: 48, marginBottom: 8 }}>
+              {displayName}
+            </Title>
+            {displayDate && (
+              <Text style={{ color: "#eee", fontSize: 18 }}>{displayDate}</Text>
+            )}
+          </div>
+        </div>
+      )}
 
-      <Row gutter={[12, 12]}>
-        {photos.map((p) => (
-          <Col key={p.id} xs={24} sm={12} md={8} lg={6}>
-            <Card
-              hoverable
-              style={{ width: "100%" }}
-              cover={<img alt={p.filename} src={resolveUrl(p.path_preview ?? p.path_thumb ?? p.path_original)} style={{ height: 180, objectFit: "cover" }} />}
-              actions={[
-                <Button type="link" key="download" onClick={() => downloadPhoto(p)}>Download</Button>
-              ]}
-            >
-              <Card.Meta title={p.filename} description={`${p.width ?? ""}x${p.height ?? ""}`} />
-            </Card>
-          </Col>
-        ))}
-      </Row>
+      {/* Sticky header controls */}
+      <GalleryHeader
+        clientName={displayName}
+        studioName="Alluring Lens Studio"
+        onDownloadAll={handleDownloadAll}
+        onShare={copyShareLink}
+        onSlideshow={() => {
+          if (photos.length > 0) {
+            setCurrentIndex(0);
+            setPreviewVisible(true);
+            setAutoplay(true);
+          }
+        }}
+      />
+
+      {/* Photos Grid */}
+      <Image.PreviewGroup
+        preview={{
+          visible: previewVisible,
+          onVisibleChange: (v) => {
+            setPreviewVisible(v);
+            if (!v) setAutoplay(false);
+          },
+          current: currentIndex,
+          onChange: (idx) => setCurrentIndex(idx),
+        }}
+      >
+        <div
+          style={{
+            columnCount: 4,
+            columnGap: "16px",
+            padding: "32px",
+            maxWidth: 1400,
+            margin: "0 auto",
+          }}
+        >
+          {photos.map((p) => {
+            const src = resolveUrl(p.path_preview ?? p.path_thumb ?? p.path_original) ?? undefined;
+            return (
+              <div
+                key={p.id}
+                style={{
+                  breakInside: "avoid",
+                  marginBottom: 16,
+                  borderRadius: 8,
+                  overflow: "hidden",
+                  boxShadow: "0 2px 10px rgba(0,0,0,0.08)",
+                }}
+              >
+                <Image
+                  src={src}
+                  alt={p.filename}
+                  style={{ width: "100%", height: "auto", display: "block" }}
+                  preview={true}
+                  placeholder
+                />
+              </div>
+            );
+          })}
+        </div>
+      </Image.PreviewGroup>
     </div>
   );
 };

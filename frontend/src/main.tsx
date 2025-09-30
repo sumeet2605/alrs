@@ -1,65 +1,45 @@
 // src/main.tsx
-import React from 'react';
-import ReactDOM from 'react-dom/client';
-import App from './App.tsx';
-import { BrowserRouter } from 'react-router-dom';
-import { App as AntdApp, ConfigProvider } from 'antd';
-import { ThemeProvider } from '@mui/material/styles';
-import { createTheme } from '@mui/material/styles';
-import { AuthProvider } from './contexts/AuthContext.tsx'; // To be created next
+import React, { useState, createContext, useMemo } from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import { ConfigProvider, theme as antdTheme, App as AntdApp } from "antd";
 import "antd/dist/reset.css";
+import { AuthProvider } from "./contexts/AuthContext";
+import { ThemeProvider as MuiThemeProvider, createTheme } from "@mui/material/styles";
 
+type ThemeContextType = { darkMode: boolean; toggleTheme: () => void; };
+export const ThemeContext = createContext<ThemeContextType>({ darkMode: false, toggleTheme: () => {} });
 
-// 1. Define a simple, custom MUI theme (you can elaborate on this later)
-const customMuiTheme = createTheme({
-  palette: {
-    primary: {
-      main: '#3f51b5', // A nice blue for primary actions (MUI default-ish)
-    },
-    secondary: {
-      main: '#f50057', // A strong accent color
-    },
-  },
-  typography: {
-    fontFamily: [
-      '-apple-system',
-      'BlinkMacSystemFont',
-      'Segoe UI',
-      'Roboto',
-      'Oxygen',
-      'Ubuntu',
-      'Cantarell',
-      'Fira Sans',
-      'Droid Sans',
-      'Helvetica Neue',
-      'sans-serif',
-    ].join(','),
-  },
-});
+function RootApp() {
+  const [darkMode, setDarkMode] = useState(false);
+  const toggleTheme = () => setDarkMode(p => !p);
+  const contextValue = useMemo(() => ({ darkMode, toggleTheme }), [darkMode]);
 
-// 2. Define a simple AntD theme to match MUI (optional but good practice)
-const customAntdTheme = {
-  token: {
-    colorPrimary: '#3f51b5',
-    borderRadius: 8,
-  },
-};
+  const muiTheme = useMemo(() => createTheme({
+    palette: { mode: darkMode ? "dark" : "light", primary: { main: "#722ed1" } },
+    typography: { fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" }
+  }), [darkMode]);
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <AntdApp>
-    <BrowserRouter>
-      {/* 3. Wrap with MUI ThemeProvider */}
-      <ThemeProvider theme={customMuiTheme}>
-        {/* 4. Wrap with AntD ConfigProvider */}
-        <ConfigProvider theme={customAntdTheme}>
-          {/* 5. Wrap with AuthProvider for state management */}
-          <AuthProvider>
-            <App />
-          </AuthProvider>
-        </ConfigProvider>
-      </ThemeProvider>
-      </BrowserRouter>
-      </AntdApp>
-  </React.StrictMode>,
+  const antdThemeConfig = useMemo(() => ({
+    token: { colorPrimary: "#722ed1", borderRadius: 8, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" },
+    algorithm: darkMode ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
+  }), [darkMode]);
+
+  return (
+    <ThemeContext.Provider value={contextValue}>
+      <ConfigProvider theme={antdThemeConfig}>
+        <AntdApp>
+          <MuiThemeProvider theme={muiTheme}>
+            <AuthProvider>
+              <App />
+            </AuthProvider>
+          </MuiThemeProvider>
+        </AntdApp>
+      </ConfigProvider>
+    </ThemeContext.Provider>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode><RootApp /></React.StrictMode>
 );

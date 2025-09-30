@@ -24,6 +24,7 @@ import { GalleryService } from "../../api/services/GalleryService";
 // If you generated delete/cover endpoints later, replace these axios calls with generated ones
 import axios from "axios";
 import { OpenAPI } from "../../api/core/OpenAPI";
+import { downloadGalleryZip } from "../../utils/download";
 
 type Photo = {
   id: string;
@@ -118,24 +119,7 @@ export const GalleryEditor: React.FC = () => {
   };
 
   // Download gallery zip (uses axios for blob)
-  const downloadGallery = async () => {
-    if (!id) return;
-    try {
-      const resp = await GalleryService.downloadGalleryRouteApiGalleriesGalleryIdDownloadGet(id);
-      const blob = new Blob([resp.data], { type: "application/zip" });
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `gallery-${id}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(a.href);
-      message.success("Download started");
-    } catch (err) {
-      console.error("download failed", err);
-      message.error("Download failed");
-    }
-  };
+  
 
   const deletePhoto = async (photoId: string) => {
     try {
@@ -174,7 +158,7 @@ export const GalleryEditor: React.FC = () => {
 
         <Space>
           <Button icon={<ReloadOutlined />} onClick={fetchPhotos}>Refresh</Button>
-          <Button icon={<DownloadOutlined />} onClick={downloadGallery}>Download ZIP</Button>
+          <Button icon={<DownloadOutlined />} onClick={()=> downloadGalleryZip(id!, `gallery-${id}.zip`)}>Download ZIP</Button>
           <Button
             icon={<PictureFilled />}
             onClick={() => {

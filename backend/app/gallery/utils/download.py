@@ -26,11 +26,12 @@ def cleanup_file_later(path: str, delay_seconds: int = 60):
     except Exception:
         pass
 
-def build_zip_file_on_disk(file_list: list[tuple[str, str]], out_path: str):
-    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED) as zf:
+def build_zip_file_on_disk(file_list, zip_path: str):
+    # file_list: List[tuple[abs_path, arcname]]
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
         for abs_path, arcname in file_list:
             if os.path.exists(abs_path):
-                zf.write(abs_path, arcname=os.path.basename(arcname))
+                zf.write(abs_path, arcname)
 
 def prepare_gallery_file_list(db: Session, gallery_id: str):
     photos = crud.list_photos(db, gallery_id) or []
@@ -60,14 +61,8 @@ def check_gallery_access(db: Session, gallery_id: str, request: Request, current
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
     return gallery
 
-def download_gallery_disk(
-    gallery_id: str,
-    request: Request,
-    background_tasks: BackgroundTasks,
-    db: Session = Depends(get_db),
-    current_user = Depends(get_optional_current_user),
-):
-    # check access
+def download_gallery_disk(gallery_id: str, request, background_tasks: BackgroundTasks, db, current_user):
+    # 1) access check – make sure this isn’t returning 401/403!
     check_gallery_access(db, gallery_id, request, current_user)
 
     file_list = prepare_gallery_file_list(db, gallery_id)
@@ -78,12 +73,10 @@ def download_gallery_disk(
     zip_path = os.path.join(tmpdir, f"gallery_{gallery_id}.zip")
     build_zip_file_on_disk(file_list, zip_path)
 
-    # Schedule cleanup of the zip file and tmpdir after response.
     def _cleanup():
         try:
             if os.path.exists(zip_path):
                 os.remove(zip_path)
-            # remove tmpdir if empty
             try:
                 os.rmdir(tmpdir)
             except Exception:
@@ -93,4 +86,9 @@ def download_gallery_disk(
 
     background_tasks.add_task(_cleanup)
 
-    return FileResponse(zip_path, filename=f"gallery-{gallery_id}.zip", media_type="application/zip")
+    # Correct headers for download + correct media type
+    return FileResponse(
+        zip_path,
+        filename=f"gallery-{gallery_id}.zip",
+        media_type="application/zip",
+    )
