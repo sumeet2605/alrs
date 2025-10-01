@@ -18,6 +18,7 @@ class Gallery(Base):
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), onupdate=func.now())
     password_hash = Column(String(256), nullable=True)
+    favorites_limit = Column(Integer, nullable=True)
 
     owner = relationship("User", back_populates="galleries")
     photos = relationship("Photo", back_populates="gallery", cascade="all, delete-orphan", order_by="Photo.order_index")

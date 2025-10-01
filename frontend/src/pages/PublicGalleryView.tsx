@@ -20,6 +20,7 @@ import GalleryHeader from "./ClientGalleryHeader";
 import { downloadGalleryZip } from "../utils/download";
 import SizePicker from "../components/SizePicker";
 import axios from "axios";
+import { FavoritesService } from "../api/services/FavoritesService"
 
 const { Title, Text } = Typography;
 
@@ -71,32 +72,11 @@ const PublicGalleryView: React.FC = () => {
     { type: "gallery" } | { type: "photo"; photo: Photo } | null
   >(null);
 
-  // favorites (persist per-gallery)
-  const favKey = `fav_gallery_${id}`;
-  const [favorites, setFavorites] = useState<Set<string>>(() => {
-    try {
-      if (!id) return new Set();
-      const raw = localStorage.getItem(favKey);
-      if (!raw) return new Set();
-      return new Set(JSON.parse(raw));
-    } catch {
-      return new Set();
-    }
-  });
-  const saveFavorites = (next: Set<string>) => {
-    setFavorites(new Set(next));
-    try {
-      localStorage.setItem(favKey, JSON.stringify(Array.from(next)));
-    } catch {}
-  };
-  const toggleFavorite = (photoId: string) => {
-    const next = new Set(favorites);
-    if (next.has(photoId)) next.delete(photoId);
-    else next.add(photoId);
-    saveFavorites(next);
-  };
+  // favorites from backend
+  const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
+  const [favLimit, setFavLimit] = useState<number | null>(null);
 
-  // overlay CSS — let image clicks pass through (so preview opens), but buttons are clickable
+  // overlay CSS
   const overlayCSS = `
     .photo-tile-wrap {
       break-inside: avoid;
@@ -104,7 +84,7 @@ const PublicGalleryView: React.FC = () => {
       border-radius: 8px;
       overflow: hidden;
       box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-      position: relative; /* important for overlay positioning */
+      position: relative;
     }
     .photo-overlay {
       position: absolute; inset: 0;
@@ -112,12 +92,12 @@ const PublicGalleryView: React.FC = () => {
       background: linear-gradient(to top, rgba(0,0,0,0.45), rgba(0,0,0,0.05));
       opacity: 0; transition: opacity 180ms ease;
       z-index: 3;
-      pointer-events: none; /* allow clicks to pass to image */
+      pointer-events: none;
       padding: 8px;
     }
     .photo-overlay-actions {
       display: flex; gap: 8px;
-      pointer-events: auto; /* buttons are clickable */
+      pointer-events: auto;
     }
     .photo-tile-wrap:hover .photo-overlay { opacity: 1; }
     .photo-icon-btn { box-shadow: 0 6px 16px rgba(0,0,0,0.25); }
@@ -133,15 +113,13 @@ const PublicGalleryView: React.FC = () => {
     try {
       // Optional gallery metadata
       try {
-        // @ts-expect-error optional
+        // @ts-expect-error optional (depends on your generated client)
         if (typeof GalleryService.getGalleryApiGalleriesGalleryIdGet === "function") {
           // @ts-ignore
           const g = await GalleryService.getGalleryApiGalleriesGalleryIdGet(id);
           if (g) setGallery(g);
         }
-      } catch {
-        /* ignore */
-      }
+      } catch { /* ignore */ }
 
       // Photos (401 => locked)
       const resp = await GalleryService.listPhotosApiGalleriesGalleryIdPhotosGet(id);
@@ -171,9 +149,26 @@ const PublicGalleryView: React.FC = () => {
     }
   }, [id]);
 
+  // load favorites from backend
+  const loadFavorites = useCallback(async () => {
+    if (!id) return;
+    try {
+      const resp: any = await FavoritesService.getFavoritesApiGalleriesGalleryIdFavoritesGet(id);
+      const ids: string[] = (resp?.photo_ids ?? []).map((n: any) => String(n));
+      setFavoriteIds(new Set(ids));
+      setFavLimit(resp?.limit ?? null);
+    } catch {
+      // silently ignore; favorites are optional UX
+    }
+  }, [id]);
+
   useEffect(() => {
     fetchAll();
   }, [fetchAll]);
+
+  useEffect(() => {
+    if (!locked) loadFavorites();
+  }, [locked, loadFavorites]);
 
   // autoplay every 3s while preview is visible
   useEffect(() => {
@@ -195,6 +190,7 @@ const PublicGalleryView: React.FC = () => {
       setPasswordValue("");
       message.success("Gallery unlocked");
       await fetchAll();
+      await loadFavorites();
     } catch (err: any) {
       Modal.error({
         title: "Unlock failed",
@@ -207,6 +203,41 @@ const PublicGalleryView: React.FC = () => {
     const full = `${window.location.origin}/g/${id}`;
     navigator.clipboard.writeText(full);
     message.success("Share link copied");
+  };
+
+  // ---- Favorites ----
+  const atLimit = favLimit != null && favoriteIds.size >= favLimit;
+
+  const toggleFavorite = async (photoId: string) => {
+    if (!id) return;
+    const isFav = favoriteIds.has(photoId);
+    try {
+      if (isFav) {
+        await FavoritesService.removeFavoriteApiGalleriesGalleryIdFavoritesPhotoIdDelete(id, photoId);
+        const next = new Set(favoriteIds);
+        next.delete(photoId);
+        setFavoriteIds(next);
+      } else {
+        if (atLimit) {
+          Modal.warning({
+            title: "Favorites limit reached",
+            content: `You can select up to ${favLimit} favorites.`,
+          });
+          return;
+        }
+        await FavoritesService.addFavoriteApiGalleriesGalleryIdFavoritesPhotoIdPost(id, photoId);
+        const next = new Set(favoriteIds);
+        next.add(photoId);
+        setFavoriteIds(next);
+      }
+    } catch (e: any) {
+      const detail = e?.response?.data?.detail;
+      if (e?.response?.status === 409 && detail) {
+        Modal.warning({ title: "Favorites limit", content: detail });
+      } else {
+        Modal.error({ title: "Favorite error", content: detail ?? "Operation failed" });
+      }
+    }
   };
 
   // ---- Downloads ----
@@ -387,6 +418,13 @@ const PublicGalleryView: React.FC = () => {
         </div>
       )}
 
+      {/* Optional favorites counter under header */}
+      {favLimit != null && (
+        <div style={{ textAlign: "center", marginTop: 12, color: "#666" }}>
+          Favorites: {favoriteIds.size} / {favLimit}
+        </div>
+      )}
+
       {/* Sticky header controls */}
       <GalleryHeader
         clientName={displayName}
@@ -402,7 +440,7 @@ const PublicGalleryView: React.FC = () => {
         }}
       />
 
-      {/* Wrap the grid INSIDE PreviewGroup so preview can control it */}
+      {/* PreviewGroup wraps the grid so slideshow works */}
       <Image.PreviewGroup
         preview={{
           visible: previewVisible,
@@ -427,13 +465,10 @@ const PublicGalleryView: React.FC = () => {
             const src =
               resolveUrl(p.path_preview ?? p.path_thumb ?? p.path_original) ??
               undefined;
-            const isFav = favorites.has(p.id);
+            const isFav = favoriteIds.has(p.id);
 
             return (
-              <div
-                key={p.id}
-                className="photo-tile-wrap" // Use a class for consistency with CSS
-              >
+              <div key={p.id} className="photo-tile-wrap">
                 <Image
                   src={src}
                   alt={p.filename}
@@ -443,18 +478,15 @@ const PublicGalleryView: React.FC = () => {
                     objectFit: "cover",
                     display: "block",
                   }}
-                  // Manually pass a non-resolvable URL for the `preview` property
-                  // to prevent a duplicate preview group being created for each image.
-                  // Instead, we rely on the parent <Image.PreviewGroup />.
                   preview={{ src: resolveUrl(p.path_original) ?? src }}
                   onClick={() => setCurrentIndex(index)}
                   placeholder
                 />
 
-                {/* Hover overlay (doesn't block image clicks) */}
+                {/* Hover overlay */}
                 <div className="photo-overlay">
                   <div className="photo-overlay-actions">
-                    <Tooltip title={isFav ? "Remove favorite" : "Favorite"}>
+                    <Tooltip title={isFav ? "Remove favorite" : (atLimit ? `Limit ${favLimit}` : "Favorite")}>
                       <Button
                         className="photo-icon-btn"
                         shape="circle"
@@ -493,9 +525,6 @@ const PublicGalleryView: React.FC = () => {
           })}
         </div>
       </Image.PreviewGroup>
-
-      {/* Unlock modal - Moved here for clean structure, but you had it outside the main return too */}
-      {/* Retained your original placement to keep changes minimal, but typically it would go after the main content */}
 
       {/* Size picker modal */}
       <SizePicker

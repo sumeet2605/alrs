@@ -8,6 +8,7 @@ import ChangePasswordPage from "../pages/ChangePasswordPage";
 import { GalleryList } from "../pages/Dashboard/GalleryList";
 import { GalleryEditor } from "../pages/Dashboard/GalleryEditor";
 import RegisterPage from "../pages/RegisterPage";
+import BrandingPage from "../pages/Settings/BrandingPage"
 
 export const PrivateRoutes = (
   <>
@@ -21,7 +22,11 @@ export const PrivateRoutes = (
       {/* Other protected child routes */}
       <Route path="register" element={<RegisterPage />} />
       <Route path="admin/users" element={<AdminUsersPage />} />
+      <Route path="branding" element={<BrandingPage />} />
       <Route path="change-password" element={<ChangePasswordPage />} />
     </Route>
+    {/* Settings */}
+    <Route path="/settings" element={<div>Settings</div>} />
+    <Route path="/settings/branding" element={<BrandingPage />} />
   </>
 );

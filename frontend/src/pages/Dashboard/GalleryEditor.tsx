@@ -15,6 +15,7 @@ import {
   Modal,
   Input,
   Tooltip,
+  InputNumber,
 } from "antd";
 import {
   ReloadOutlined,
@@ -27,6 +28,7 @@ import { OpenAPI } from "../../api/core/OpenAPI";
 import { downloadGalleryZip } from "../../utils/download";
 import { downloadSinglePhoto } from "../../utils/downloadSinglePhoto"; // <-- make sure you have this util
 import SizePicker from "../../components/SizePicker";
+import { FavoritesService } from "../../api/services/FavoritesService";
 
 type Photo = {
   id: string;
@@ -51,6 +53,7 @@ export const GalleryEditor: React.FC = () => {
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
   const [passwordValue, setPasswordValue] = useState("");
   const [unlocking, setUnlocking] = useState(false);
+  const [favLimit, setFavLimit] = useState(0);
 
   // size picker modal state
   const [sizeModalOpen, setSizeModalOpen] = useState(false);
@@ -195,6 +198,18 @@ export const GalleryEditor: React.FC = () => {
           <Button icon={<ReloadOutlined />} onClick={fetchPhotos}>
             Refresh
           </Button>
+          <InputNumber
+            min={0}
+            placeholder="Favorites limit (0 = default)"
+            value={favLimit ?? undefined}
+            onChange={(v) => setFavLimit(v as number)}
+          />
+          <Button
+            onClick={async () => {
+              await FavoritesService.setFavoritesLimitApiGalleriesGalleryIdFavoritesLimitPut(id!, { limit: favLimit ?? null });
+              message.success("Favorites limit saved");
+            }}
+          >Save Favorite Limit</Button>
           <Button icon={<DownloadOutlined />} onClick={openGalleryDownload}>
             Download ZIP
           </Button>

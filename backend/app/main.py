@@ -14,9 +14,11 @@ from slowapi.middleware import SlowAPIMiddleware # type: ignore
 from slowapi.errors import RateLimitExceeded # type: ignore
 from fastapi.responses import JSONResponse # type: ignore
 from app.rate_limiter import limiter
-from app.gallery.controllers import gallery_controller
+from app.gallery.controllers import gallery_controller, favorites_controller
 from app import config
 from starlette.staticfiles import StaticFiles #type:ignore
+from app.brand import controllers as brand_controllers
+
 load_dotenv()
 
 FRONTEND_ORIGINS = [
@@ -56,3 +58,5 @@ app.include_router(user_controller.router, prefix="/api")
 app.include_router(auth_controller.router, prefix="/api") 
 app.include_router(admin_controller.router, prefix="/api")
 app.include_router(gallery_controller.router, prefix="/api")
+app.include_router(brand_controllers.router)
+app.include_router(favorites_controller.router)

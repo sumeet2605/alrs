@@ -12,6 +12,8 @@ from app.auth.models.login_audit_model import LoginAudit   # Import all your mod
 from app.auth.models.role_model import Role, Permission  # Import all your models here to register them with SQLAlchemy
 from app.auth.models.refresh_token_model import RefreshToken  # Import all your models here to register them with SQLAlchemy
 from app.gallery.models.gallery_model import Gallery, Photo, Branding
+from app.brand.watermark import BrandSettings
+from app.gallery.models.favorite_model import Favorite
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config

@@ -63,8 +63,8 @@ def process_image_pipeline(photo_file_id: str, original_abs_path: str, owner_id:
         thumb_abs_path = str(thumbs_dir / f"{photo_file_id}.jpg")
 
         # create preview/thumb on disk
-        images.make_preview(original_abs_path, preview_abs_path, config.IMAGE_SIZES["preview"])
-        images.make_thumb(original_abs_path, thumb_abs_path, config.IMAGE_SIZES["thumb"])
+        images.make_preview(original_abs_path, preview_abs_path, config.IMAGE_SIZES["preview"], db)
+        images.make_thumb(original_abs_path, thumb_abs_path, config.IMAGE_SIZES["thumb"], db)
 
         # Build relative web paths to save in DB (what frontend will consume)
         rel_preview = f"/media/{owner_id}/{gallery_id}/previews/{photo_file_id}.jpg"
@@ -77,7 +77,8 @@ def process_image_pipeline(photo_file_id: str, original_abs_path: str, owner_id:
             dst_dir = downloads_dir(owner_id, gallery_id, size)
             dst_dir.mkdir(parents=True, exist_ok=True)
             dst = dst_dir / f"{photo_file_id}.jpg"
-            images.make_size(original_abs_path, str(dst), longest)
+            print(db)
+            images.make_size(original_abs_path, str(dst), longest, db)
 
         # update DB record found by file_id (file_id is a string UUID)
         p = db.query(Photo).filter(Photo.file_id == photo_file_id).first()
