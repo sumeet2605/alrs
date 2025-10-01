@@ -113,7 +113,7 @@ const PublicGalleryView: React.FC = () => {
     try {
       // Optional gallery metadata
       try {
-        // @ts-expect-error optional (depends on your generated client)
+        // @ts-expect-error optional (depends on your generated client) ignore
         if (typeof GalleryService.getGalleryApiGalleriesGalleryIdGet === "function") {
           // @ts-ignore
           const g = await GalleryService.getGalleryApiGalleriesGalleryIdGet(id);

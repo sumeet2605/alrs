@@ -5,7 +5,6 @@ import type { Body_user_login_api_login_post } from '../api/models/Body_user_log
 import type { Token } from '../api/models/Token';
 import { AuthenticationService } from '../api/services/AuthenticationService';
 import { OpenAPI } from '../api/core/OpenAPI';
-import axios from 'axios';
 
 // --- 1. Define Context State Type ---
 interface AuthContextType {

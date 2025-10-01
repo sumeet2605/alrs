@@ -28,20 +28,6 @@ const useAuth = (): AuthContextType => {
  * Utility function to return a dynamic team size based on the user's role.
  * You can expand this function to handle all your defined backend roles.
  */
-const getTeamSizeByRole = (role: string | null | undefined): number => {
-  const roleName = (role || 'Client').toLowerCase();
-  switch (roleName) {
-    case 'admin':
-    case 'owner':
-      return 15;
-    case 'manager':
-      return 5;
-    case 'developer':
-      return 3;
-    default:
-      return 1; // Default for 'Client' or unknown roles
-  }
-};
 
 const DashboardPage: React.FC = () => {
   // Now using the mock useAuth defined above
