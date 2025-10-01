@@ -1,5 +1,5 @@
 # app/gallery/services/favorite_service.py
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session #type: ignore
 from app.gallery.models.favorite_model import Favorite
 from app.gallery.models.gallery_model import Gallery
 from app.gallery.models.gallery_model import Photo

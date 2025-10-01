@@ -10,6 +10,8 @@ from fastapi.responses import FileResponse #type:ignore
 import zipfile, tempfile, os, time
 from app import config
 from app.gallery.services.paths import downloads_dir
+from app.gallery.utils.download_helper import ensure_cached_download_for_photo
+
 
 def resolve_media_path(rel_path: str) -> Path | None:
     if not rel_path:
@@ -101,7 +103,7 @@ def prepare_gallery_file_list_by_size(db, gallery_id: str, size: str):
 
     for p in photos:
         if size == "original":
-            abs_path = (config.MEDIA_ROOT.parent / p.path_original.lstrip("/"))
+            abs_path = ensure_cached_download_for_photo(db, p, size)
             arcname = os.path.basename(abs_path)
         else:
             dst = downloads_dir(owner_id, str(gallery_id), size) / f"{p.file_id or p.id}.jpg"

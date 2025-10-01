@@ -1,88 +1,120 @@
 # backend/app/images.py
-from PIL import Image, ImageOps, ImageDraw, ImageFont, ImageEnhance #type:ignore
+from __future__ import annotations
 from pathlib import Path
-from app.config import IMAGE_SIZES
 import os
-from sqlalchemy.orm import Session #type: ignore
-from app.brand.service import get_settings
+
+from PIL import (
+    Image, ImageOps, ImageDraw, ImageFont, ImageEnhance, ImageFile  # type: ignore
+)
+from sqlalchemy.orm import Session  # type: ignore
+
+from app.config import IMAGE_SIZES
 import app.config as config
+from app.brand.service import get_settings
+
+# Be tolerant of slightly truncated JPEGs
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+# Pillow >= 10 uses Resampling enum, fallback for older
+try:
+    RESAMPLE = Image.Resampling.LANCZOS  # type: ignore[attr-defined]
+except Exception:
+    RESAMPLE = Image.LANCZOS  # type: ignore
 
 
-def make_preview(original_path: str, out_path: str, max_side: int, db: Session=None):
-    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-    with Image.open(original_path) as im:
-        im = ImageOps.exif_transpose(im)
-        im.thumbnail((max_side, max_side), Image.LANCZOS)
-        if db:
-            im = _apply_watermark(im, db)
-        im.convert("RGB").save(out_path, "JPEG", quality=90, optimize=True)
+# ---------- helpers ----------
 
-def make_thumb(original_path: str, out_path: str, size: int, db: Session=None):
-    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
-    with Image.open(original_path) as im:
-        im = ImageOps.exif_transpose(im)
-        im.thumbnail((size, size), Image.LANCZOS)
-        if db:
-            im = _apply_watermark(im, db)
-        im.convert("RGB").save(out_path, "JPEG", quality=85, optimize=True)
+def _open_image_lenient(path: str) -> Image.Image:
+    """
+    Open an image, transpose based on EXIF, and force-load pixels so
+    errors happen here (and can be caught) rather than downstream.
+    """
+    # Tiny retry in case the file is still flushing to disk
+    for _ in range(2):
+        try:
+            im = Image.open(path)
+            im = ImageOps.exif_transpose(im)
+            im.load()  # force decode now
+            return im
+        except OSError:
+            import time
+            time.sleep(0.05)
+    # final attempt raises
+    im = Image.open(path)
+    im = ImageOps.exif_transpose(im)
+    im.load()
+    return im
 
-# placeholder for watermarking function - you can extend with logo path and options
-def _apply_watermark(img: Image.Image, db: Session) -> Image.Image:
+
+def _resize_to_box(im: Image.Image, max_w: int, max_h: int) -> Image.Image:
+    im = im.convert("RGB")
+    im.thumbnail((max_w, max_h), RESAMPLE)
+    return im
+
+
+def _apply_watermark(img: Image.Image, db: Session | None) -> Image.Image:
+    """
+    Overlay a logo or text watermark according to saved brand settings.
+    If disabled, returns the image unchanged.
+    """
+    if not db:
+        return img
+
     s = get_settings(db)
-    if not s.wm_enabled:
+    if not getattr(s, "wm_enabled", False):
         return img
 
     img = img.convert("RGBA")
-    overlay = Image.new("RGBA", img.size, (0,0,0,0))
+    overlay = Image.new("RGBA", img.size, (0, 0, 0, 0))
 
-    # compute target size
     long_edge = max(img.size)
-    wm_scale_px = max(64, int(long_edge * float(s.wm_scale or 0.2)))
+    wm_scale = float(getattr(s, "wm_scale", 0.2) or 0.2)
+    wm_scale_px = max(64, int(long_edge * wm_scale))
 
-    if s.wm_use_logo and s.logo_path:
-        logo_path_abs = (config.MEDIA_ROOT.parent / s.logo_path.lstrip("/")).as_posix()
+    mark: Image.Image | None = None
+
+    if getattr(s, "wm_use_logo", False) and getattr(s, "logo_path", None):
         try:
-            logo = Image.open(logo_path_abs).convert("RGBA")
+            # s.logo_path is stored like "/media/..../logo.png"
+            logo_abs = (config.MEDIA_ROOT.parent / s.logo_path.lstrip("/")).as_posix()
+            logo = Image.open(logo_abs).convert("RGBA")
             ratio = wm_scale_px / max(logo.size)
-            logo = logo.resize((int(logo.width*ratio), int(logo.height*ratio)), Image.LANCZOS)
+            logo = logo.resize((int(logo.width * ratio), int(logo.height * ratio)), RESAMPLE)
             mark = logo
         except Exception:
             mark = None
     else:
-        # simple text watermark
-        mark = Image.new("RGBA", (wm_scale_px*3, int(wm_scale_px*0.6)), (0,0,0,0))
+        # Text watermark fallback
+        text = getattr(s, "wm_text", None) or "©"
+        mark = Image.new("RGBA", (wm_scale_px * 3, int(wm_scale_px * 0.6)), (0, 0, 0, 0))
         d = ImageDraw.Draw(mark)
-        text = s.wm_text or "©"
         try:
-            font = ImageFont.truetype("arial.ttf", int(wm_scale_px*0.25))
-        except:
+            font = ImageFont.truetype("arial.ttf", int(wm_scale_px * 0.25))
+        except Exception:
             font = ImageFont.load_default()
-        tw, th = d.textbbox((0,0), text, font=font)[2:]
-        d.text(((mark.width-tw)//2, (mark.height-th)//2), text, fill=(255,255,255,255), font=font)
+        bbox = d.textbbox((0, 0), text, font=font)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        d.text(((mark.width - tw) // 2, (mark.height - th) // 2), text, fill=(255, 255, 255, 255), font=font)
 
     if mark:
-        # place
         mx, my = mark.size
-        W,H = img.size
-        pad = int(long_edge*0.02)
+        W, H = img.size
+        pad = int(long_edge * 0.02)
         posmap = {
             "top-left": (pad, pad),
-            "top": ((W-mx)//2, pad),
-            "top-right": (W-mx-pad, pad),
-            "left": (pad, (H-my)//2),
-            "center": ((W-mx)//2, (H-my)//2),
-            "right": (W-mx-pad, (H-my)//2),
-            "bottom-left": (pad, H-my-pad),
-            "bottom": ((W-mx)//2, H-my-pad),
-            "bottom-right": (W-mx-pad, H-my-pad)
+            "top": ((W - mx) // 2, pad),
+            "top-right": (W - mx - pad, pad),
+            "left": (pad, (H - my) // 2),
+            "center": ((W - mx) // 2, (H - my) // 2),
+            "right": (W - mx - pad, (H - my) // 2),
+            "bottom-left": (pad, H - my - pad),
+            "bottom": ((W - mx) // 2, H - my - pad),
+            "bottom-right": (W - mx - pad, H - my - pad),
         }
-        pos = posmap.get(s.wm_position or "bottom-right", posmap["bottom-right"])
+        pos = posmap.get(getattr(s, "wm_position", "bottom-right"), posmap["bottom-right"])
 
-        # opacity
-        if s.wm_opacity is not None:
-            alpha = max(0.0, min(1.0, float(s.wm_opacity)))
-        else:
-            alpha = 0.25
+        alpha = float(getattr(s, "wm_opacity", 0.25) or 0.25)
+        alpha = max(0.0, min(1.0, alpha))
         if alpha < 1:
             a = mark.split()[-1]
             a = ImageEnhance.Brightness(a).enhance(alpha)
@@ -94,26 +126,59 @@ def _apply_watermark(img: Image.Image, db: Session) -> Image.Image:
     return out
 
 
-
-def _resize_longest_edge(src_path: str, dst_path: str, longest: int,db, quality=90):
-    with Image.open(src_path) as im:
-        im = im.convert("RGB")
-        w, h = im.size
-        if max(w, h) <= longest:
-            # still write a copy to dst for consistency
-            im.save(dst_path, "JPEG", quality=quality, optimize=True)
-            return
+def _resize_longest_edge(src_path: str, dst_path: str, longest: int, db: Session | None, quality: int = 90):
+    Path(dst_path).parent.mkdir(parents=True, exist_ok=True)
+    im = _open_image_lenient(src_path).convert("RGB")
+    w, h = im.size
+    if max(w, h) > longest:
         if w >= h:
             new_w = longest
             new_h = int(h * (longest / w))
         else:
             new_h = longest
             new_w = int(w * (longest / h))
-        im = im.resize((new_w, new_h), Image.LANCZOS)
-        if db:
-            im = _apply_watermark(im, db)
-        im.save(dst_path, "JPEG", quality=quality, optimize=True)
+        im = im.resize((new_w, new_h), RESAMPLE)
 
-def make_size(src_path: str, dst_path: str, longest: int, db: Session=None):
-    print(db)
+    # Watermark (if enabled)
+    im = _apply_watermark(im, db)
+
+    im.save(dst_path, "JPEG", quality=quality, optimize=True, progressive=True)
+
+
+# ---------- public API used by controllers ----------
+
+def make_preview(original_path: str, out_path: str, max_side: int, db: Session | None = None):
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    im = _open_image_lenient(original_path)
+    im = _resize_to_box(im, max_side, max_side)
+    im = _apply_watermark(im, db)
+    im.save(out_path, "JPEG", quality=90, optimize=True, progressive=True)
+
+
+def make_thumb(original_path: str, out_path: str, size: int, db: Session | None = None):
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    im = _open_image_lenient(original_path)
+    im = _resize_to_box(im, size, size)
+    im = _apply_watermark(im, db)
+    im.save(out_path, "JPEG", quality=85, optimize=True, progressive=True)
+
+
+def make_size(src_path: str, dst_path: str, longest: int, db: Session | None = None):
+    """
+    Create a resized (longest edge = `longest`) JPEG and apply watermark
+    according to brand settings.
+    """
     _resize_longest_edge(src_path, dst_path, longest, db)
+
+
+def make_original_with_watermark(src_path: str, dst_path: str, db: Session | None = None, quality: int = 92):
+    """
+    NON-DESTRUCTIVE: produce a same-size JPEG “original” with the watermark applied.
+    This does not overwrite the uploaded master file.
+
+    Use this when the client requests `size=original` but watermarking is enabled.
+    """
+    Path(dst_path).parent.mkdir(parents=True, exist_ok=True)
+    im = _open_image_lenient(src_path).convert("RGB")
+    im = _apply_watermark(im, db)
+    im.save(dst_path, "JPEG", quality=quality, optimize=True, progressive=True)

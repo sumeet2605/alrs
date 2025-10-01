@@ -17,6 +17,7 @@ from pathlib import Path
 from app.gallery.utils.download import download_gallery_disk, check_gallery_access, prepare_gallery_file_list_by_size
 from app.gallery.services.paths import previews_dir, thumbs_dir, downloads_dir
 from fastapi.responses import FileResponse #type: ignore
+from app.gallery.utils.download_helper import ensure_cached_download_for_photo
 
 
 router = APIRouter(tags=["Gallery"])
@@ -351,7 +352,7 @@ def download_single_photo(
     gallery_id: str,
     photo_id: str,
     request: Request,
-    size: str = "original",
+    size: str = Query("original", pattern="^(original|large|medium|web)$"),
     db: Session = Depends(get_db),
     current_user = Depends(get_optional_current_user),
 ):
@@ -365,20 +366,13 @@ def download_single_photo(
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
 
-    owner_id = str(gallery.owner_id)
-    if size == "original" or size not in config.DOWNLOAD_SIZES:
-        abs_path = (config.MEDIA_ROOT.parent / photo.path_original.lstrip("/")).resolve()
-    else:
-        dst = downloads_dir(owner_id, str(gallery_id), size) / f"{photo.file_id or photo.id}.jpg"
-        abs_path = dst.resolve()
+    try:
+        abs_path = ensure_cached_download_for_photo(db, photo, size)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="Source not available")
 
-    if not os.path.exists(abs_path):
-        raise HTTPException(status_code=404, detail="Requested size not available")
-
-    return FileResponse(
-        path=str(abs_path),
-        media_type="image/jpeg" if size != "original" else "application/octet-stream",
-        filename=photo.filename if size == "original" else f"{os.path.splitext(photo.filename)[0]}-{size}.jpg",
-        headers={"Cache-Control": "public, max-age=31536000"}
-    )
+    filename = f"{os.path.splitext(photo.filename or f'photo-{photo_id}')[0]}_{size}.jpg"
+    return FileResponse(abs_path, media_type="image/jpeg", filename=filename)
 
