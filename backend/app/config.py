@@ -27,3 +27,9 @@ DOWNLOAD_SIZES = {
     "medium": 1200,
     "web": 1024,
 }
+
+# Watermark application toggles (defaults—can be overridden by DB branding settings)
+WM_APPLY_PREVIEWS = True
+WM_APPLY_THUMBS = True
+WM_APPLY_DOWNLOADS = True       # <- add watermark to download presets
+WM_APPLY_ORIGINALS = True      # <- set True if you want originals watermarked too

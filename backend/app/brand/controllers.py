@@ -21,6 +21,7 @@ def write_brand(payload: dict, db: Session = Depends(get_db)):
 @router.post("/logo", status_code=201)
 def upload_logo(file: UploadFile = File(...), db: Session = Depends(get_db)):
     ext = os.path.splitext(file.filename)[1].lower() or ".png"
+    gcs_blob_name = f"brand/logo{ext}"
     dest = storage.save_fileobj(file, f"brand/logo{ext}")
     with open(dest, "wb") as f: shutil.copyfileobj(file.file, f)
     s = update_settings(db, {"logo_path": f"/media/brand/logo{ext}"})

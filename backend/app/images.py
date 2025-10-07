@@ -2,10 +2,7 @@
 from __future__ import annotations
 from pathlib import Path
 import os
-
-from PIL import (
-    Image, ImageOps, ImageDraw, ImageFont, ImageEnhance, ImageFile  # type: ignore
-)
+from PIL import ( Image, ImageOps, ImageDraw, ImageFont, ImageEnhance, ImageFile) #type: ignore
 from sqlalchemy.orm import Session  # type: ignore
 
 from app.config import IMAGE_SIZES
