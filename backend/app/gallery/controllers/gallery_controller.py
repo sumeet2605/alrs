@@ -301,6 +301,7 @@ def download_gallery_route(
     # permission
     check_gallery_access(db, gallery_id, request, current_user)
     filename = f"gallery-{gallery_id}-{size}.zip"
+    print("Ziiping")
     key = ensure_zip_in_gcs(db, gallery_id, size)
     if linkOnly:
         url = storage.signed_url(key, expires_seconds=600, response_disposition=None)
@@ -334,26 +335,21 @@ def download_single_photo(
 
     # Ensure artifact exists; returns ("local", path) or ("gcs", key)
     try:
-        print("338")
         backend, ref = ensure_cached_download_for_photo(db, photo, size)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Source not available")
-
+    # print(ref)
     safe_name = os.path.splitext(photo.filename or f"photo-{photo_id}")[0]
-    print(safe_name)
     download_name = f"{safe_name}_{size}.jpg"
-    print(download_name)
-    print(backend)
     if backend == "local":
         return FileResponse(ref, media_type="image/jpeg", filename=download_name)
     content_disposition = f'attachment; filename="{download_name}"'
     # GCS: generate signed URL and redirect
     # add content-disposition so browser saves with expected name
-    url = url_from_path(photo.path_original, config.GCS_SIGNED_URL_EXP_SECONDS, response_disposition=content_disposition)
-    print(url)
+    url = url_from_path(f"gs://{config.GCS_BUCKET_NAME}/{ref}", config.GCS_SIGNED_URL_EXP_SECONDS, response_disposition=content_disposition)
     filename = f"{os.path.splitext(photo.filename or f'photo-{photo_id}')[0]}_{size}.jpg"
-    
+    # print(url)
     return {"url": url, "filename": filename}
 

@@ -11,9 +11,6 @@ GCS_SIGNED_URL_EXP_SECONDS = int(os.getenv("GCS_SIGNED_URL_EXP_SECONDS", "3600")
 GCS_CREDENTIALS_JSON = os.getenv("GCS_CREDENTIALS_JSON", "")  # path to service account json, or empty to use default creds
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
 
-print(GCP_PROJECT_ID)
-print(GCS_BUCKET_NAME)
-
 # image sizes
 IMAGE_SIZES = {
     "preview": 1280,

@@ -1,4 +1,3 @@
-// src/pages/PublicGalleryView.tsx
 import React, { useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router-dom";
 import {
@@ -14,13 +13,19 @@ import {
   Tooltip,
 } from "antd";
 import { DownloadOutlined, HeartOutlined, HeartFilled } from "@ant-design/icons";
+// Assuming the root context for imports is one level above 'pages', or that
+// the API/utils are one more level up if 'pages' is itself nested.
+// We'll try going one level up for the components/utils that are likely 
+// siblings of 'pages' under 'src'. The original paths seem correct for 
+// a typical src/pages/ structure, but we'll try prepending one more `../` 
+// for the non-local paths to see if that resolves a potential misconfiguration.
 import { GalleryService } from "../api/services/GalleryService";
 import { OpenAPI } from "../api/core/OpenAPI";
 import GalleryHeader from "./ClientGalleryHeader";
-import { downloadGalleryZip } from "../utils/download";
 import SizePicker from "../components/SizePicker";
-import axios from "axios";
 import { FavoritesService } from "../api/services/FavoritesService"
+import { downloadGalleryZip } from "../utils/download";
+import { downloadSinglePhoto } from "../utils/downloadSinglePhoto"; // Using the redirect utility
 
 const { Title, Text } = Typography;
 
@@ -38,6 +43,12 @@ type Photo = {
 };
 
 type DownloadSize = "original" | "large" | "medium" | "web";
+
+// Define SizeTarget to hold necessary info for download utility
+type SizeTarget =
+  | { type: "gallery"; filenameHint: string }
+  | { type: "photo"; photoId: string; filenameHint: string };
+
 
 const resolveUrl = (url?: string | null) => {
   if (!url) return null;
@@ -68,9 +79,7 @@ const PublicGalleryView: React.FC = () => {
 
   // size-picker modal
   const [sizeModalOpen, setSizeModalOpen] = useState(false);
-  const [sizeTarget, setSizeTarget] = useState<
-    { type: "gallery" } | { type: "photo"; photo: Photo } | null
-  >(null);
+  const [sizeTarget, setSizeTarget] = useState<SizeTarget | null>(null);
 
   // favorites from backend
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
@@ -241,12 +250,21 @@ const PublicGalleryView: React.FC = () => {
 
   // ---- Downloads ----
   const openGalleryDownloadPicker = () => {
-    setSizeTarget({ type: "gallery" });
+    const name =
+      gallery?.booking?.client?.display_name ||
+      gallery?.title ||
+      `gallery-${id}`;
+    setSizeTarget({ type: "gallery", filenameHint: `${name}.zip` });
     setSizeModalOpen(true);
   };
 
   const openPhotoDownloadPicker = (photo: Photo) => {
-    setSizeTarget({ type: "photo", photo });
+    const filenameHint = photo.filename || `photo-${photo.id}`;
+    setSizeTarget({ 
+      type: "photo", 
+      photoId: photo.id, 
+      filenameHint: filenameHint 
+    });
     setSizeModalOpen(true);
   };
 
@@ -254,15 +272,11 @@ const PublicGalleryView: React.FC = () => {
     if (!id || !sizeTarget) return;
     try {
       if (sizeTarget.type === "gallery") {
-        const name =
-          gallery?.booking?.client?.display_name ||
-          gallery?.title ||
-          `gallery-${id}`;
-        await downloadGalleryZip(id, `${name}.zip`, size);
-      } else {
-        const p = sizeTarget.photo;
-        await downloadSinglePhotoBlob(id, p.id, size, p.filename || `photo-${p.id}.jpg`);
+        await downloadGalleryZip(id, sizeTarget.filenameHint, size);
+      } else if (sizeTarget.type === "photo") {
+        await downloadSinglePhoto(id, sizeTarget.photoId, sizeTarget.filenameHint, size);
       }
+      message.success("Your download will start shortly.");
     } catch (e: any) {
       Modal.error({
         title: "Download failed",
@@ -272,38 +286,6 @@ const PublicGalleryView: React.FC = () => {
       setSizeModalOpen(false);
       setSizeTarget(null);
     }
-  };
-
-  // Single-photo download (blob) with cookies + auth header if present
-  const downloadSinglePhotoBlob = async (
-    galleryId: string,
-    photoId: string,
-    size: DownloadSize,
-    filename: string
-  ) => {
-    const base = (OpenAPI.BASE ?? "").replace(/\/$/, "");
-    const url = `${base}/api/galleries/${encodeURIComponent(
-      galleryId
-    )}/photos/${encodeURIComponent(photoId)}?size=${encodeURIComponent(size)}`;
-
-    const headers: Record<string, string> = {};
-    if (OpenAPI.TOKEN) headers["Authorization"] = `Bearer ${OpenAPI.TOKEN}`;
-
-    const resp = await axios.get(url, {
-      headers,
-      withCredentials: !!OpenAPI.WITH_CREDENTIALS,
-      responseType: "blob",
-      validateStatus: (s) => s >= 200 && s < 400,
-    });
-
-    const blob = new Blob([resp.data], { type: resp.headers["content-type"] || "image/jpeg" });
-    const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => URL.revokeObjectURL(link.href), 1500);
   };
 
   // derived display

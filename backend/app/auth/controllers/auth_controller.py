@@ -64,15 +64,13 @@ def refresh_token(
     """
     Exchanges a valid refresh token for a new access token and refresh token.
     """
-    # print('Request headers:', dict(request.headers))
-    # print('refresh_cookie:', refresh_token)
+
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Refresh token missing.")
     ip_address = request.client.host
     
     # 1. Decode and validate the refresh token
     token_data = auth_service.decode_token(refresh_token)
-    # print(token_data)
     
     jti = token_data.jti if hasattr(token_data, "jti") else getattr(token_data, "jti", None)
     # verify DB record
@@ -116,7 +114,6 @@ def get_current_user(
     """
     Retrieves the currently authenticated user's information based on the provided JWT.
     """
-    # print(token)
     # 1. Decode and validate the access token
     token_data = auth_service.decode_token(token)
     

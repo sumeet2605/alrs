@@ -9,33 +9,6 @@ from pathlib import Path
 from app import config, images
 from app.gallery.utils.urls import url_from_path
 
-def file_path_to_web_path(p: Optional[str]) -> Optional[str]:
-    """
-    Convert a stored filesystem path (or already relative web path) into the web-accessible path.
-    - If p is None -> returns None
-    - If p already begins with '/media' -> return as-is
-    - If p lies under config.MEDIA_ROOT -> return '/media/<relative path>'
-    - Otherwise return p (best effort, may be absolute filesystem path which frontend can't load)
-    """
-    if not p:
-        return None
-    try:
-        # already a web path
-        if isinstance(p, str) and p.startswith("/media"):
-            return p
-        media_root = Path(str(config.MEDIA_ROOT)).resolve()
-        p_path = Path(p).resolve()
-        # if file under media root -> convert to /media/...
-        try:
-            rel = p_path.relative_to(media_root)
-            return f"/media/{rel.as_posix()}"
-        except Exception:
-            # not under media root; fallback to return p as-is
-            return p
-    except Exception:
-        return p
-
-
 def set_gallery_password(db:Session, gallery_id:str, owner_id:str, password: Optional[str]) -> models.Gallery:
     gallery = db.query(models.Gallery).filter(models.Gallery.id == gallery_id, models.Gallery.owner_id == owner_id).first()
     if not gallery:
@@ -90,9 +63,9 @@ def get_galleries_for_owner_with_cover(db: Session, owner_id: str) -> List[model
                 "id": str(cover.id),
                 "file_id": getattr(cover, "file_id", None),
                 "filename": cover.filename,
-                "path_original": url_from_path(cover.path_original),
-                "path_preview": url_from_path(cover.path_preview),
-                "path_thumb": url_from_path(cover.path_thumb),
+                "path_original": (cover.path_original),
+                "path_preview": (cover.path_preview),
+                "path_thumb": (cover.path_thumb),
                 "width": cover.width,
                 "height": cover.height,
                 "is_cover": bool(cover.is_cover),

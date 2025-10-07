@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session #type: ignore
 from app.gallery.services import gallery_service as crud
 from app.storage import storage
 import io, os, time
+from app.gallery.utils.download_helper import ensure_cached_download_for_photo
 
 # Build a deterministic key for the ZIP
 def zip_key(gallery_id: str, size: str) -> str:
@@ -20,6 +21,8 @@ def ensure_zip_in_gcs(db: Session, gallery_id: str, size: str, *, force_rebuild:
       - Else: build zip in-memory and upload.
     """
     key = zip_key(gallery_id, size)
+    print(key)
+    print()
     if not force_rebuild and storage.exists(key):
         return key
 
@@ -30,16 +33,14 @@ def ensure_zip_in_gcs(db: Session, gallery_id: str, size: str, *, force_rebuild:
         # Your sized image keys (since you removed local FS & owner_id):
         # originals:   "{gallery}/original/{filename}"
         # downloads:   "{gallery}/downloads/{size}/{base}.jpg"
+        backend, ref = ensure_cached_download_for_photo(db, p, size)
+        print(ref)
         if size == "original":
-            # You said you now store by filename, not file_id
-            # Example key from upload: f"{gallery_id}/original/{filename}"
-            gcs_key = f"{gallery_id}/original/{p.filename}"
             arc = os.path.basename(p.filename)
         else:
             base, _ = os.path.splitext(p.filename or f"photo-{p.id}")
-            gcs_key = f"{gallery_id}/downloads/{size}/{base}.jpg"
             arc = f"{base}-{size}.jpg"
-        entries.append((gcs_key, arc))
+        entries.append((ref, arc))
 
     # Build zip in-memory and upload to GCS
     buf = io.BytesIO()

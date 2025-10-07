@@ -2,12 +2,14 @@
 from __future__ import annotations
 from pathlib import Path
 import os
-from PIL import ( Image, ImageOps, ImageDraw, ImageFont, ImageEnhance, ImageFile) #type: ignore
+import tempfile
+from PIL import (Image, ImageOps, ImageDraw, ImageFont, ImageEnhance, ImageFile)  # type: ignore
 from sqlalchemy.orm import Session  # type: ignore
 
 from app.config import IMAGE_SIZES
 import app.config as config
 from app.brand.service import get_settings
+from app.storage import storage  # storage abstraction (GCS or local)
 
 # Be tolerant of slightly truncated JPEGs
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -36,7 +38,7 @@ def _open_image_lenient(path: str) -> Image.Image:
         except OSError:
             import time
             time.sleep(0.05)
-    # final attempt raises
+    # final attempt raises if failing
     im = Image.open(path)
     im = ImageOps.exif_transpose(im)
     im.load()
@@ -52,7 +54,12 @@ def _resize_to_box(im: Image.Image, max_w: int, max_h: int) -> Image.Image:
 def _apply_watermark(img: Image.Image, db: Session | None) -> Image.Image:
     """
     Overlay a logo or text watermark according to saved brand settings.
-    If disabled, returns the image unchanged.
+    If disabled or no settings available, returns the image unchanged.
+
+    Supports logo paths stored as:
+      - local absolute path (e.g. "/media/owner/.../logo.png")
+      - relative paths under MEDIA_ROOT (e.g. "media/brand/logo.png")
+      - GCS path starting with "gs://bucket/key"
     """
     if not db:
         return img
@@ -70,17 +77,57 @@ def _apply_watermark(img: Image.Image, db: Session | None) -> Image.Image:
 
     mark: Image.Image | None = None
 
-    if getattr(s, "wm_use_logo", False) and getattr(s, "logo_path", None):
+    logo_path = getattr(s, "logo_path", None)
+    use_logo = bool(getattr(s, "wm_use_logo", False) and logo_path)
+
+    if use_logo:
+        tmp_file = None
         try:
-            # s.logo_path is stored like "/media/..../logo.png"
-            logo_abs = (config.MEDIA_ROOT.parent / s.logo_path.lstrip("/")).as_posix()
-            logo = Image.open(logo_abs).convert("RGBA")
+            lp = str(logo_path)
+            if lp.startswith("gs://"):
+                # gs://bucket/path/to/logo.png
+                # storage.download_to_path expects a key relative to the bucket (i.e. 'path/to/logo.png')
+                # strip bucket name
+                parts = lp[len("gs://"):].split("/", 1)
+                if len(parts) == 2:
+                    _, key = parts
+                else:
+                    key = parts[0] if parts else ""
+                tmp_f = tempfile.NamedTemporaryFile(delete=False, suffix=Path(lp).suffix or ".png")
+                tmp_f.close()
+                tmp_file = tmp_f.name
+                # download via storage abstraction
+                storage.download_to_path(key, tmp_file)
+                logo = Image.open(tmp_file).convert("RGBA")
+            else:
+                # local path or relative media path
+                # if absolute filesystem path exists, use it; otherwise try MEDIA_ROOT parent + lp
+                if os.path.exists(lp):
+                    logo = Image.open(lp).convert("RGBA")
+                else:
+                    # try relative to MEDIA_ROOT parent (like earlier code used)
+                    candidate = (config.MEDIA_ROOT.parent / lp.lstrip("/")).as_posix()
+                    if os.path.exists(candidate):
+                        logo = Image.open(candidate).convert("RGBA")
+                    else:
+                        # fallback: try to open as-is (may be a URL — not handled here)
+                        logo = Image.open(lp).convert("RGBA")
+            # resize logo to target scale
             ratio = wm_scale_px / max(logo.size)
-            logo = logo.resize((int(logo.width * ratio), int(logo.height * ratio)), RESAMPLE)
+            logo = logo.resize((max(1, int(logo.width * ratio)), max(1, int(logo.height * ratio))), RESAMPLE)
             mark = logo
         except Exception:
+            # any failure to load logo -> fallback to text watermark
             mark = None
-    else:
+        finally:
+            # cleanup temp file if we downloaded one
+            if tmp_file:
+                try:
+                    os.unlink(tmp_file)
+                except Exception:
+                    pass
+
+    if not mark:
         # Text watermark fallback
         text = getattr(s, "wm_text", None) or "©"
         mark = Image.new("RGBA", (wm_scale_px * 3, int(wm_scale_px * 0.6)), (0, 0, 0, 0))
@@ -93,6 +140,7 @@ def _apply_watermark(img: Image.Image, db: Session | None) -> Image.Image:
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         d.text(((mark.width - tw) // 2, (mark.height - th) // 2), text, fill=(255, 255, 255, 255), font=font)
 
+    # place watermark
     if mark:
         mx, my = mark.size
         W, H = img.size

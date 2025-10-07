@@ -34,7 +34,7 @@ def ensure_cached_download_for_photo(db: Session, photo, size: str) -> Tuple[Sto
     Raises FileNotFoundError if the original cannot be found, or size invalid.
     """
     mode = _storage_mode()
-    print(mode)
+    # print(mode)
     gallery = photo.gallery  # if relationship available; otherwise fetch owner_id/gid directly
     owner_id = str(getattr(gallery, "owner_id", None) or getattr(photo, "owner_id"))
     gallery_id = str(getattr(photo, "gallery_id"))
@@ -47,18 +47,29 @@ def ensure_cached_download_for_photo(db: Session, photo, size: str) -> Tuple[Sto
 
     # --- GCS path ---
     orig_key = _photo_original_key(owner_id, gallery_id, file_id, ext)
-    print(orig_key)
+    # print(orig_key)
     if size == "original":
         # just ensure it exists in bucket
-        print(storage.exists(orig_key))
+        # print(storage.exists(orig_key))
         if not storage.exists(orig_key):
             raise FileNotFoundError("Original not in bucket")
-        print(89)
-        return ("gcs", orig_key)
+        with tempfile.TemporaryDirectory() as td:
+            src_path = os.path.join(td, f"orig{ext or '.jpg'}")
+            with open(src_path, "wb") as f:
+                f.write(storage.read_bytes(orig_key))
+
+            out_path = os.path.join(td, f"{file_id}.jpg")
+            longest = config.DOWNLOAD_SIZES[size]
+            make_original_with_watermark(src_path, out_path, db)
+            preset_key = f"{gallery_id}/downloads/original/{file_id}{ext}"
+            # upload preset
+            with open(out_path, "rb") as f:
+                storage.save_fileobj(f, preset_key)
+        return ("gcs", preset_key)
 
     # preset in bucket
     preset_key = _photo_preset_key(owner_id, gallery_id, size, file_id)
-    print(preset_key, "92")
+    # print(preset_key, "92")
     if not storage.exists(preset_key):
         # generate in temp, then upload
         # 1) download original to temp

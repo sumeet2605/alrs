@@ -18,7 +18,6 @@ def create_new_user(user_data: UserRegistration, db: Session) -> User:
     Returns:
         The newly created user object.
     """
-    print(user_data)
     if get_user_by_email(user_data.email, db):
         raise HTTPException(
             status_code=409,

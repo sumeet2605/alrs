@@ -18,7 +18,7 @@ export async function downloadSinglePhoto(
     headers: OpenAPI.TOKEN ? { Authorization: `Bearer ${OpenAPI.TOKEN}` } : undefined,
     validateStatus: s => s >= 200 && s < 400,
   });
-
+  console.log(r.data)
   if (r && r.data && typeof r.data.url === "string") {
     const finalName = r.data.filename || filenameHint || `photo-${photoId}.jpg`;
     const a = document.createElement("a");
