@@ -26,7 +26,7 @@ import {
 import { GalleryService } from "../../api/services/GalleryService";
 import { OpenAPI } from "../../api/core/OpenAPI";
 import { downloadGalleryZip } from "../../utils/download";
-import { downloadSinglePhoto } from "../../utils/downloadSinglePhoto"; // <-- make sure you have this util
+import { downloadSinglePhoto } from "../../utils/downloadSinglePhoto";
 import SizePicker from "../../components/SizePicker";
 import { FavoritesService } from "../../api/services/FavoritesService";
 
@@ -34,38 +34,51 @@ type Photo = {
   id: string;
   file_id?: string | null;
   filename: string;
-  path_original?: string | null;
-  path_preview?: string | null;
-  path_thumb?: string | null;
+  path_original?: string | null; // may be a storage key or a signed URL
+  path_preview?: string | null;  // may be a storage key or a signed URL
+  path_thumb?: string | null;    // may be a storage key or a signed URL
   width?: number | null;
   height?: number | null;
   order_index?: number | null;
   is_cover?: boolean | null;
 };
 
+type DownloadPreset = "original" | "large" | "medium" | "web";
+
 export const GalleryEditor: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { message } = App.useApp();
+
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(false);
 
-  // password prompt state
+  // password modal
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
   const [passwordValue, setPasswordValue] = useState("");
   const [unlocking, setUnlocking] = useState(false);
-  const [favLimit, setFavLimit] = useState(0);
 
-  // size picker modal state
+  // favorites limit
+  const [favLimit, setFavLimit] = useState<number | null>(null);
+  const [savingFavLimit, setSavingFavLimit] = useState(false);
+  const [loadingFavLimit, setLoadingFavLimit] = useState(false);
+
+  // size-picker modal
   const [sizeModalOpen, setSizeModalOpen] = useState(false);
   const [sizeTarget, setSizeTarget] = useState<
     { type: "photo" | "gallery"; photoId?: string; filenameHint?: string } | null
   >(null);
 
+  /**
+   * Resolve a possibly-relative storage path to a URL.
+   * - If it's already absolute (http/https), return as-is (e.g., signed GCS URL).
+   * - Otherwise prefix with OpenAPI.BASE (for dev/local proxying).
+   */
   const resolveUrl = useCallback((url?: string | null) => {
     if (!url) return null;
-    if (url.startsWith("http://") || url.startsWith("https://")) return url;
+    if (/^https?:\/\//i.test(url)) return url;
     const base = (OpenAPI.BASE ?? "").replace(/\/$/, "");
-    return `${base}${url}`;
+    const path = url.startsWith("/") ? url : `/${url}`;
+    return `${base}${path}`;
   }, []);
 
   const fetchPhotos = useCallback(async () => {
@@ -81,7 +94,6 @@ export const GalleryEditor: React.FC = () => {
       else if (Array.isArray((resp as any).items)) list = (resp as any).items as Photo[];
       else list = (resp as any) as Photo[];
 
-      // normalize ids to string
       list = list.map((p: any) => ({ ...p, id: String(p.id) }));
       setPhotos(list);
     } catch (err: any) {
@@ -97,9 +109,32 @@ export const GalleryEditor: React.FC = () => {
     }
   }, [id, message]);
 
+  // load photos
   useEffect(() => {
     fetchPhotos();
   }, [fetchPhotos]);
+
+  // load favorite limit
+  useEffect(() => {
+    const loadFavLimit = async () => {
+      if (!id) return;
+      setLoadingFavLimit(true);
+      try {
+        const resp = await FavoritesService.getFavoritesLimitApiGalleriesGalleryIdFavoritesLimitGet?.(id);
+        // Accept either {limit: number|null} or raw number
+        const value =
+          resp && typeof resp === "object" && "limit" in (resp as any)
+            ? (resp as any).limit
+            : (resp as any);
+        setFavLimit(value ?? 0);
+      } catch {
+        // ignore silently; default remains
+      } finally {
+        setLoadingFavLimit(false);
+      }
+    };
+    loadFavLimit();
+  }, [id]);
 
   const unlockGallery = async () => {
     if (!id) return;
@@ -141,8 +176,7 @@ export const GalleryEditor: React.FC = () => {
     }
   };
 
-  // ---- Download handlers with size picker ----
-
+  // ---- Download flows ----
   const openGalleryDownload = () => {
     setSizeTarget({ type: "gallery", filenameHint: `gallery-${id}.zip` });
     setSizeModalOpen(true);
@@ -157,11 +191,11 @@ export const GalleryEditor: React.FC = () => {
     setSizeModalOpen(true);
   };
 
-  const handleSizeSelect = async (size: string) => {
+  const handleSizeSelect = async (size: DownloadPreset) => {
     if (!id || !sizeTarget) return;
     try {
       if (sizeTarget.type === "gallery") {
-        await downloadGalleryZip(id, sizeTarget.filenameHint, size ); // util supports { size }
+        await downloadGalleryZip(id, sizeTarget.filenameHint, size);
       } else if (sizeTarget.type === "photo" && sizeTarget.photoId) {
         await downloadSinglePhoto(id, sizeTarget.photoId, sizeTarget.filenameHint, size);
       }
@@ -178,7 +212,7 @@ export const GalleryEditor: React.FC = () => {
 
   return (
     <div>
-      {/* Title + controls */}
+      {/* Top bar */}
       <div
         style={{
           display: "flex",
@@ -194,25 +228,44 @@ export const GalleryEditor: React.FC = () => {
           </Tooltip>
         </div>
 
-        <Space>
+        <Space wrap>
           <Button icon={<ReloadOutlined />} onClick={fetchPhotos}>
             Refresh
           </Button>
+
           <InputNumber
             min={0}
             placeholder="Favorites limit (0 = default)"
-            value={favLimit ?? undefined}
-            onChange={(v) => setFavLimit(v as number)}
+            value={favLimit ?? 0}
+            onChange={(v) => setFavLimit(typeof v === "number" ? v : 0)}
+            disabled={loadingFavLimit || savingFavLimit}
           />
           <Button
+            loading={savingFavLimit}
+            disabled={loadingFavLimit}
             onClick={async () => {
-              await FavoritesService.setFavoritesLimitApiGalleriesGalleryIdFavoritesLimitPut(id!, { limit: favLimit ?? null });
-              message.success("Favorites limit saved");
+              if (!id) return;
+              try {
+                setSavingFavLimit(true);
+                await FavoritesService.setFavoritesLimitApiGalleriesGalleryIdFavoritesLimitPut?.(
+                  id,
+                  { limit: favLimit ?? null }
+                );
+                message.success("Favorites limit saved");
+              } catch (e: any) {
+                message.error(e?.response?.data?.detail ?? "Failed to save favorites limit");
+              } finally {
+                setSavingFavLimit(false);
+              }
             }}
-          >Save Favorite Limit</Button>
+          >
+            Save Favorite Limit
+          </Button>
+
           <Button icon={<DownloadOutlined />} onClick={openGalleryDownload}>
             Download ZIP
           </Button>
+
           <Button
             icon={<PictureFilled />}
             onClick={() => {
@@ -340,17 +393,18 @@ export const GalleryEditor: React.FC = () => {
           placeholder="Password"
           value={passwordValue}
           onChange={(e) => setPasswordValue(e.target.value)}
+          onPressEnter={unlockGallery}
         />
       </Modal>
 
-      {/* Size picker modal (uses your existing component) */}
+      {/* Size picker modal */}
       <SizePicker
         open={sizeModalOpen}
         onCancel={() => {
           setSizeModalOpen(false);
           setSizeTarget(null);
         }}
-        onSelect={handleSizeSelect} // receives size: 'original' | 'large' | 'medium' | 'web'
+        onSelect={(size) => handleSizeSelect(size as DownloadPreset)}
       />
     </div>
   );

@@ -7,6 +7,7 @@ import uuid
 from app.auth.utils.password_hasher import get_password_hash, verify_password as verify_plain_password
 from pathlib import Path
 from app import config, images
+from app.gallery.utils.urls import url_from_path
 
 def file_path_to_web_path(p: Optional[str]) -> Optional[str]:
     """
@@ -89,18 +90,18 @@ def get_galleries_for_owner_with_cover(db: Session, owner_id: str) -> List[model
                 "id": str(cover.id),
                 "file_id": getattr(cover, "file_id", None),
                 "filename": cover.filename,
-                "path_original": cover.path_original,
-                "path_preview": cover.path_preview,
-                "path_thumb": cover.path_thumb,
+                "path_original": url_from_path(cover.path_original),
+                "path_preview": url_from_path(cover.path_preview),
+                "path_thumb": url_from_path(cover.path_thumb),
                 "width": cover.width,
                 "height": cover.height,
                 "is_cover": bool(cover.is_cover),
             }
             # Prefer thumb -> preview -> original (converted to web path)
             cover_url = (
-                file_path_to_web_path(cover.path_thumb)
-                or file_path_to_web_path(cover.path_preview)
-                or file_path_to_web_path(cover.path_original)
+                url_from_path(cover.path_thumb)
+                or url_from_path(cover.path_preview)
+                or url_from_path(cover.path_original)
             )
 
         # Build gallery dict. If crud returned ORM objects, convert essential fields.

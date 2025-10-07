@@ -6,7 +6,7 @@ def gallery_root(owner_id: str, gallery_id: str) -> Path:
     return config.MEDIA_ROOT / owner_id / gallery_id
 
 def originals_dir(owner_id: str, gallery_id: str) -> Path:
-    return gallery_root(owner_id, gallery_id) / "originals"
+    return gallery_root(owner_id, gallery_id) / "original"
 
 def thumbs_dir(owner_id: str, gallery_id: str) -> Path:
     return gallery_root(owner_id, gallery_id) / "thumbs"

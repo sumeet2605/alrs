@@ -39,9 +39,6 @@ app.add_middleware(
 
 app.state.limiter = limiter
 
-app.mount("/media",
-          StaticFiles(directory=str(config.MEDIA_ROOT)))
-
 @app.get("/")
 async def root():
     return {"message": "Welcome to Alluring Lens Studios API!"}

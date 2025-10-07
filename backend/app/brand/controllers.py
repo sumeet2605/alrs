@@ -6,6 +6,7 @@ from .service import get_settings, update_settings
 from app import config
 from pathlib import Path
 import shutil, os
+from app.storage import storage
 
 router = APIRouter(prefix="/api/brand", tags=["Brand"])
 
@@ -20,8 +21,7 @@ def write_brand(payload: dict, db: Session = Depends(get_db)):
 @router.post("/logo", status_code=201)
 def upload_logo(file: UploadFile = File(...), db: Session = Depends(get_db)):
     ext = os.path.splitext(file.filename)[1].lower() or ".png"
-    dest = config.MEDIA_ROOT / "brand" / f"logo{ext}"
-    dest.parent.mkdir(parents=True, exist_ok=True)
+    dest = storage.save_fileobj(file, f"brand/logo{ext}")
     with open(dest, "wb") as f: shutil.copyfileobj(file.file, f)
     s = update_settings(db, {"logo_path": f"/media/brand/logo{ext}"})
     return {"logo_url": s.logo_path}

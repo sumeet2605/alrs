@@ -1,69 +1,80 @@
 # app/gallery/download_helpers.py
 from __future__ import annotations
 from pathlib import Path
-import os
-
+import os, tempfile
+from typing import Tuple, Literal, Optional
 from sqlalchemy.orm import Session  # type: ignore
-
 from app import config
+from app.gallery.services.paths import downloads_dir
 from app.gallery.models.gallery_model import Photo
 from app.images import make_size, make_original_with_watermark
+from app.storage import storage
 
-# Map your public query names to pixel longest-edge sizes.
-# Keep 'original' special-cased.
-DOWNLOAD_SIZES = {
-    "original": None,   # special => watermark same size, do not resize
-    "large": 2048,
-    "medium": 1200,
-    "web": 1024,
-}
 
-def resolve_abs_from_rel(rel_path: str) -> str:
+
+StorageMode = Literal["local", "gcs"]
+
+def _storage_mode() -> StorageMode:
+    return "gcs" if getattr(config, "STORAGE_BACKEND", "").lower() == "gcs" else "local"
+
+def _photo_original_key(owner_id: str, gallery_id: str, file_id: str, ext: str) -> str:
+    return f"{gallery_id}/original/{file_id}"
+
+def _photo_preset_key(owner_id: str, gallery_id: str, size: str, file_id: str) -> str:
+    # store presets as jpgs
+    return f"{gallery_id}/downloads/{size}/{file_id}"
+
+def ensure_cached_download_for_photo(db: Session, photo, size: str) -> Tuple[StorageMode, str]:
     """
-    Convert stored relative path (/media/...) to absolute filesystem path.
+    Ensure a downloadable artifact for (photo, size) exists.
+    Returns:
+      ("local", /abs/path/to/file)  -> caller should FileResponse this
+      ("gcs",   gcs_object_key)     -> caller should redirect to signed URL
+
+    Raises FileNotFoundError if the original cannot be found, or size invalid.
     """
-    return str(config.MEDIA_ROOT.parent / rel_path.lstrip("/"))
+    mode = _storage_mode()
+    print(mode)
+    gallery = photo.gallery  # if relationship available; otherwise fetch owner_id/gid directly
+    owner_id = str(getattr(gallery, "owner_id", None) or getattr(photo, "owner_id"))
+    gallery_id = str(getattr(photo, "gallery_id"))
+    file_id = str(getattr(photo, "filename") or getattr(photo, "id"))
+    ext = photo.ext or os.path.splitext(photo.filename or "")[1] or ".jpg"
+    # print(gallery_id, owner_id, file_id, ext)
 
-def ensure_cached_download_for_photo(db: Session, photo: Photo, size: str) -> str:
-    """
-    Return an absolute file path to the ready-to-serve download for (photo, size).
-    Generates and caches it if not present.
+    if size not in config.DOWNLOAD_SIZES:  # e.g. {"original": None, "large": 2048, ...}
+        raise ValueError("Unsupported size")
 
-    - original => uses make_original_with_watermark (non-destructive)
-    - other sizes => uses make_size(longest=N)
-    """
-    size = (size or "original").lower()
-    if size not in DOWNLOAD_SIZES:
-        raise ValueError(f"Unknown size '{size}'")
+    # --- GCS path ---
+    orig_key = _photo_original_key(owner_id, gallery_id, file_id, ext)
+    print(orig_key)
+    if size == "original":
+        # just ensure it exists in bucket
+        print(storage.exists(orig_key))
+        if not storage.exists(orig_key):
+            raise FileNotFoundError("Original not in bucket")
+        print(89)
+        return ("gcs", orig_key)
 
-    # Originals are saved by you at photo.path_original (relative /media/...)
-    rel_original = photo.path_original
-    if not rel_original:
-        raise FileNotFoundError("Photo original path missing")
+    # preset in bucket
+    preset_key = _photo_preset_key(owner_id, gallery_id, size, file_id)
+    print(preset_key, "92")
+    if not storage.exists(preset_key):
+        # generate in temp, then upload
+        # 1) download original to temp
+        if not storage.exists(orig_key):
+            raise FileNotFoundError("Original not in bucket")
+        with tempfile.TemporaryDirectory() as td:
+            src_path = os.path.join(td, f"orig{ext or '.jpg'}")
+            with open(src_path, "wb") as f:
+                f.write(storage.read_bytes(orig_key))
 
-    abs_original = resolve_abs_from_rel(rel_original)
+            out_path = os.path.join(td, f"{file_id}.jpg")
+            longest = config.DOWNLOAD_SIZES[size]
+            make_size(src_path, out_path, int(longest or 0), db)
 
-    # Cache destination: /media/{owner}/{gallery}/downloads/{size}/{file_id}.jpg
-    owner_id = str(photo.gallery.owner_id) if photo.gallery and photo.gallery.owner_id is not None else "unknown"
-    gallery_id = str(photo.gallery_id)
-    file_id = getattr(photo, "file_id", None) or f"{photo.id}"
+            # upload preset
+            with open(out_path, "rb") as f:
+                storage.save_fileobj(f, preset_key)
 
-    dst_rel = f"/media/{owner_id}/{gallery_id}/downloads/{size}/{file_id}.jpg"
-    dst_abs = resolve_abs_from_rel(dst_rel)
-
-    # Already exists?
-    if os.path.exists(dst_abs):
-        return dst_abs
-
-    # Ensure folder
-    Path(dst_abs).parent.mkdir(parents=True, exist_ok=True)
-
-    # Generate
-    if DOWNLOAD_SIZES[size] is None:
-        # original => watermark only, no resize
-        make_original_with_watermark(abs_original, dst_abs, db=db)
-    else:
-        longest = DOWNLOAD_SIZES[size]
-        make_size(abs_original, dst_abs, longest, db=db)
-
-    return dst_abs
+    return ("gcs", preset_key)

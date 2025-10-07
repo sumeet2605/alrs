@@ -16,8 +16,12 @@ from app.gallery.utils.tokens import create_gallery_access_token, verify_gallery
 from pathlib import Path
 from app.gallery.utils.download import download_gallery_disk, check_gallery_access, prepare_gallery_file_list_by_size
 from app.gallery.services.paths import previews_dir, thumbs_dir, downloads_dir
-from fastapi.responses import FileResponse #type: ignore
+from fastapi.responses import FileResponse, StreamingResponse #type: ignore
 from app.gallery.utils.download_helper import ensure_cached_download_for_photo
+from app.storage import storage
+from app.gallery.utils.image_pipline import process_image_pipeline
+from app.gallery.utils.urls import url_from_path
+from app.gallery.utils.zip_gcs import signed_zip_url, ensure_zip_in_gcs, zip_key
 
 
 router = APIRouter(tags=["Gallery"])
@@ -43,54 +47,6 @@ def save_upload_fileobj(upload_file: UploadFile, dest: Path):
         shutil.copyfileobj(upload_file.file, buffer)
 
 
-def process_image_pipeline(photo_file_id: str, original_abs_path: str, owner_id: str, gallery_id: str):
-    """
-    Background worker:
-    - original_abs_path: absolute filesystem path to the uploaded original file
-    - photo_file_id: the Photo.file_id (UUID string) used to find DB record
-    - after creating preview/thumb on disk, write relative /media/... paths to DB
-    """
-    # Create a fresh DB session here to avoid session scope issues with BackgroundTasks
-    from app.database import SessionLocal
-    db = SessionLocal()
-    try:
-        owner_dir = config.MEDIA_ROOT / owner_id / gallery_id
-        previews_dir = owner_dir / "previews"
-        thumbs_dir = owner_dir / "thumbs"
-        previews_dir.mkdir(parents=True, exist_ok=True)
-        thumbs_dir.mkdir(parents=True, exist_ok=True)
-
-        preview_abs_path = str(previews_dir / f"{photo_file_id}.jpg")
-        thumb_abs_path = str(thumbs_dir / f"{photo_file_id}.jpg")
-
-        # create preview/thumb on disk
-        images.make_preview(original_abs_path, preview_abs_path, config.IMAGE_SIZES["preview"], db)
-        images.make_thumb(original_abs_path, thumb_abs_path, config.IMAGE_SIZES["thumb"], db)
-
-        # Build relative web paths to save in DB (what frontend will consume)
-        rel_preview = f"/media/{owner_id}/{gallery_id}/previews/{photo_file_id}.jpg"
-        rel_thumb = f"/media/{owner_id}/{gallery_id}/thumbs/{photo_file_id}.jpg"
-
-         # Eager: create download sizes
-        for size, longest in config.DOWNLOAD_SIZES.items():
-            if size == "original":
-                continue
-            dst_dir = downloads_dir(owner_id, gallery_id, size)
-            dst_dir.mkdir(parents=True, exist_ok=True)
-            dst = dst_dir / f"{photo_file_id}.jpg"
-            print(db)
-            images.make_size(original_abs_path, str(dst), longest, db)
-
-        # update DB record found by file_id (file_id is a string UUID)
-        p = db.query(Photo).filter(Photo.file_id == photo_file_id).first()
-        if p:
-            p.path_preview = rel_preview
-            p.path_thumb = rel_thumb
-            db.add(p)
-            db.commit()
-    finally:
-        db.close()
-
 @router.get("/galleries/{gallery_id}", status_code=200)
 async def get_gallery(
     gallery_id: str,
@@ -115,14 +71,11 @@ async def upload_photos(
     owner_id_str = str(user.id)
     gallery_id_str = str(gallery_id)
 
-    # Absolute dirs on disk
-    owner_dir = Path(config.MEDIA_ROOT) / owner_id_str / gallery_id_str
-    originals_dir = owner_dir / "originals"
-    originals_dir.mkdir(parents=True, exist_ok=True)
-
     for upload in files:
         # normalize extension
+        upload.filename = upload.filename.lower()
         ext = os.path.splitext(upload.filename)[1].lower()
+        
         if not ext:
             ext = ".jpg"
         elif not ext.startswith("."):
@@ -131,15 +84,13 @@ async def upload_photos(
         # generate file_id (string UUID) for filesystem usage and DB reference
         file_id = str(uuid.uuid4())
 
+        key_original = f"{gallery_id_str}/original/{upload.filename}"
+
+        await upload.seek(0)
+        storage.save_fileobj(upload.file, key_original)
+        
+        stored_path = f"gs://{config.GCS_BUCKET_NAME}/{key_original}"
         # absolute filesystem path where we'll save the uploaded original
-        dest_original_path = originals_dir / f"{file_id}{ext}"
-        dest_original_abs = str(dest_original_path)
-
-        # save uploaded file to disk
-        save_upload_fileobj(upload, dest_original_path)
-
-        # relative web path to store in DB and return to frontend
-        rel_path_original = f"/media/{owner_id_str}/{gallery_id_str}/originals/{file_id}{ext}"
 
         # create DB record and include file_id + relative path
         p = crud.create_photo(
@@ -147,12 +98,12 @@ async def upload_photos(
             gallery_id=gallery_id_str,
             filename=upload.filename,
             ext=ext,
-            path_original=rel_path_original,  # store relative web path in DB
+            path_original=stored_path,  # store relative web path in DB
             file_id=file_id,
         )
 
         # schedule background processing using absolute path for processing and file_id for lookup
-        background_tasks.add_task(process_image_pipeline, p.file_id, dest_original_abs, owner_id_str, gallery_id_str)
+        background_tasks.add_task(process_image_pipeline, p.filename, stored_path, owner_id_str, gallery_id_str)
 
         created.append({
             "id": p.id,
@@ -224,9 +175,9 @@ def list_photos(gallery_id: str,request: Request, db: Session = Depends(get_db),
             "id": str(p.id),
             "file_id": getattr(p, "file_id", None),
             "filename": p.filename,
-            "path_original": p.path_original,
-            "path_preview": p.path_preview,
-            "path_thumb": p.path_thumb,
+            "path_original": url_from_path(p.path_original),
+            "path_preview": url_from_path(p.path_preview),
+            "path_thumb": url_from_path(p.path_thumb),
             "width": p.width,
             "height": p.height,
             "order_index": p.order_index,
@@ -234,6 +185,20 @@ def list_photos(gallery_id: str,request: Request, db: Session = Depends(get_db),
         })
     return {"photos": out}
 
+
+# -------------------------
+# Helpers
+# -------------------------
+
+def _key_from_stored_path(path: str) -> str:
+    """
+    Convert stored DB path ('/media/<key>' or 'gs://bucket/<key>' or raw key) to a storage key.
+    """
+    if not path:
+        return ""
+    if path.startswith("gs://"):
+        return path.split("/", 3)[-1]  # after 'gs://bucket/'
+    return path.lstrip("/")
 
 @router.delete("/galleries/{gallery_id}/photos/{photo_id}", status_code=204)
 def delete_photo(
@@ -248,13 +213,15 @@ def delete_photo(
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
 
-    # Optional: also delete files from filesystem
+    # Optional: delete files from storage
     for path in [photo.path_original, photo.path_preview, photo.path_thumb]:
-        if path and os.path.exists(path):
-            try:
-                os.remove(path)
-            except Exception:
-                pass
+        if not path:
+            continue
+        key = _key_from_stored_path(path)
+        try:
+            storage.delete(key)
+        except Exception:
+            pass
 
     db.delete(photo)
     db.commit()
@@ -327,25 +294,27 @@ def download_gallery_route(
     request: Request,
     background_tasks: BackgroundTasks,
     size: str = Query("original", regex="^(original|large|medium|web)$"),
+    linkOnly: bool = Query(False),
     db: Session = Depends(get_db),
     current_user = Depends(get_optional_current_user),
 ):
     # permission
     check_gallery_access(db, gallery_id, request, current_user)
-
-    file_list = prepare_gallery_file_list_by_size(db, gallery_id, size)
-    if not file_list:
-        raise HTTPException(status_code=404, detail="No files")
-    return download_gallery_disk(
-        gallery_id=gallery_id,
-        request=request,
-        background_tasks=background_tasks,
-        db=db,
-        current_user=current_user,
-        file_list=file_list,  # modify function to accept this list (or reuse existing builder)
-        filename=f"gallery-{gallery_id}-{size}.zip"
+    filename = f"gallery-{gallery_id}-{size}.zip"
+    key = ensure_zip_in_gcs(db, gallery_id, size)
+    if linkOnly:
+        url = storage.signed_url(key, expires_seconds=600, response_disposition=None)
+        return {"url": url, "filename": filename}
+    reader = storage.open_reader(key)  # file-like object
+    return StreamingResponse(
+        reader,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"'
+        },
     )
 
+from urllib.parse import quote
 
 @router.get("/galleries/{gallery_id}/photos/{photo_id}")
 def download_single_photo(
@@ -356,23 +325,35 @@ def download_single_photo(
     db: Session = Depends(get_db),
     current_user = Depends(get_optional_current_user),
 ):
-    # Permission: reuse your existing check from list_photos
-    gallery = crud.get_gallery(db, gallery_id)
-    if not gallery:
-        raise HTTPException(status_code=404, detail="Gallery not found")
-    check_gallery_access(db, gallery_id, request, current_user)  # implement using your logic
+    # Permission
+    check_gallery_access(db, gallery_id, request, current_user)
 
     photo = crud.get_photo(db, gallery_id, photo_id)
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
 
+    # Ensure artifact exists; returns ("local", path) or ("gcs", key)
     try:
-        abs_path = ensure_cached_download_for_photo(db, photo, size)
+        print("338")
+        backend, ref = ensure_cached_download_for_photo(db, photo, size)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except FileNotFoundError:
         raise HTTPException(status_code=404, detail="Source not available")
 
+    safe_name = os.path.splitext(photo.filename or f"photo-{photo_id}")[0]
+    print(safe_name)
+    download_name = f"{safe_name}_{size}.jpg"
+    print(download_name)
+    print(backend)
+    if backend == "local":
+        return FileResponse(ref, media_type="image/jpeg", filename=download_name)
+    content_disposition = f'attachment; filename="{download_name}"'
+    # GCS: generate signed URL and redirect
+    # add content-disposition so browser saves with expected name
+    url = url_from_path(photo.path_original, config.GCS_SIGNED_URL_EXP_SECONDS, response_disposition=content_disposition)
+    print(url)
     filename = f"{os.path.splitext(photo.filename or f'photo-{photo_id}')[0]}_{size}.jpg"
-    return FileResponse(abs_path, media_type="image/jpeg", filename=filename)
+    
+    return {"url": url, "filename": filename}
 

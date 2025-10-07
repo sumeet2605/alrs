@@ -24,7 +24,7 @@ def upgrade():
     # Now add UNIQUE constraint in SQLite batch mode:
     with op.batch_alter_table("photos", recreate="always") as batch_op:
         # Ensure the column exists; if not, add column here:
-        # batch_op.add_column(sa.Column('file_id', sa.String(length=36), nullable=True))
+        batch_op.add_column(sa.Column('file_id', sa.String(length=36), nullable=True))
         batch_op.create_unique_constraint("uq_photos_file_id", ["file_id"])
 
 

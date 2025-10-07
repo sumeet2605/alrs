@@ -1,64 +1,47 @@
-import axios from 'axios';
-import { OpenAPI } from '../api/core/OpenAPI';
+// src/utils/download.ts
+import axios from "axios";
+import { OpenAPI } from "../api/core/OpenAPI";
 
-/**
- * Download the entire gallery as a ZIP file.
- *
- * @param galleryId  string ID
- * @param filename   optional override for the downloaded filename
- * @param size       optional size param: 'original' | 'large' | 'medium' | 'web'
- */
 export async function downloadGalleryZip(
   galleryId: string,
   filename?: string,
-  size: string = 'original'
+  size: "original" | "large" | "medium" | "web" = "original"
 ) {
-    console.log(encodeURIComponent(
-    size
-  ))
-  const base = (OpenAPI.BASE ?? '').replace(/\/$/, '');
-  const url = `${base}/api/galleries/${encodeURIComponent(galleryId)}/download?size=${encodeURIComponent(
-    size
-  )}`;
+  const base = (OpenAPI.BASE ?? "").replace(/\/$/, "");
+  const linkUrl = `${base}/api/galleries/${encodeURIComponent(galleryId)}/download?size=${encodeURIComponent(size)}&linkOnly=true`;
 
-  const headers: Record<string, string> = {};
-  if (OpenAPI.TOKEN) {
-    headers['Authorization'] = `Bearer ${OpenAPI.TOKEN}`;
-  }
-
-  const resp = await axios.get(url, {
-    headers,
+  const r = await axios.get(linkUrl, {
     withCredentials: !!OpenAPI.WITH_CREDENTIALS,
-    responseType: 'blob',
-    validateStatus: (s) => s >= 200 && s < 400,
+    headers: OpenAPI.TOKEN ? { Authorization: `Bearer ${OpenAPI.TOKEN}` } : undefined,
+    validateStatus: s => s >= 200 && s < 400,
   });
 
-  const contentType = (resp.headers['content-type'] || '').toLowerCase();
-  const isZip =
-    contentType.includes('zip') ||
-    contentType.includes('application/octet-stream');
-
-  if (!isZip) {
-    // Attempt to read the blob as text so we can surface an error message
-    try {
-      const text = await new Response(resp.data).text();
-      throw new Error(text || 'Download failed: non-zip response');
-    } catch {
-      throw new Error('Download failed: non-zip response');
-    }
+  if (r && r.data && typeof r.data.url === "string") {
+    const finalName = r.data.filename || filename || `gallery-${galleryId}-${size}.zip`;
+    const a = document.createElement("a");
+    a.href = r.data.url; // signed GCS URL
+    a.download = finalName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return;
   }
 
-  const effectiveName = filename || `gallery-${galleryId}-${size}.zip`;
-  const blob = new Blob([resp.data], { type: 'application/zip' });
-  const link = document.createElement('a');
-  const href = URL.createObjectURL(blob);
+  // Fallback to blob stream if server doesn’t support linkOnly yet
+  const url = linkUrl.replace("&linkOnly=true", "");
+  const resp = await axios.get(url, {
+    withCredentials: !!OpenAPI.WITH_CREDENTIALS,
+    headers: OpenAPI.TOKEN ? { Authorization: `Bearer ${OpenAPI.TOKEN}` } : undefined,
+    responseType: "blob",
+    validateStatus: s => s >= 200 && s < 400,
+  });
 
-  link.href = href;
-  link.download = effectiveName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-
-  // Give the browser a moment before revoking
-  setTimeout(() => URL.revokeObjectURL(href), 2000);
+  const blob = new Blob([resp.data], { type: "application/zip" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename || `gallery-${galleryId}-${size}.zip`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
