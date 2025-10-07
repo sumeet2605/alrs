@@ -38,7 +38,7 @@ def register_user(
     """
     new_user = user_service.create_new_user(user_data, db)
     # TODO: Integration with email service (e.g., SendGrid) for confirmation email.
-    background_tasks.add_task(email_service.send_confirmation_email, new_user.email, new_user.username, new_user.full_name)
+    # background_tasks.add_task(email_service.send_confirmation_email, new_user.email, new_user.username, new_user.full_name)
     return {"message": "User registered successfully."}
 
 @router.get(

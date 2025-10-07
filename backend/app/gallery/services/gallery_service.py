@@ -46,7 +46,7 @@ def list_galleries(db:Session) -> List[models.Gallery]:
     return db.query(models.Gallery).order_by(models.Gallery.created_at.desc()).all()
 
 def get_galleries_for_owner(db: Session, owner_id: str) -> List[models.Gallery]:
-    return db.query(models.Gallery).filter(models.Gallery.owner_id == owner_id).order_by(models.Gallery.created_at.desc()).all()
+    return db.query(models.Gallery).order_by(models.Gallery.created_at.desc()).all()
 
 def get_galleries_for_owner_with_cover(db: Session, owner_id: str) -> List[models.Gallery]:
     galleries = get_galleries_for_owner(db, owner_id)

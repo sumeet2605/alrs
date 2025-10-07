@@ -32,7 +32,7 @@ const DefaultLayout: React.FC = () => {
     const items: MenuProps['items'] = [
       { key: '/dashboard', icon: <HomeOutlined />, label: 'Dashboard' },
       ...(userRole === 'Owner'
-        ? [{ key: '/admin/users', icon: <UserOutlined />, label: 'User Management' } as const]
+        ? [{ key: '/dashboard/admin/users', icon: <UserOutlined />, label: 'User Management' } as const]
         : []),
     ];
 

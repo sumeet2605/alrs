@@ -26,8 +26,8 @@ const RegisterPage: React.FC = () => {
       // Call the generated API registration function
       await UsersService.registerUserApiRegisterPost(payload);
 
-      message.success('Registration successful! Please log in.');
-      navigate('/login');
+      message.success('Registration successful! ');
+      navigate('/dashboard/admin/users');
     } catch (error: any) {
       // Handle Validation Errors (422) or other server errors
       const errorDetail = error?.response?.data?.detail;
@@ -147,13 +147,6 @@ const RegisterPage: React.FC = () => {
           </Form.Item>
         </Form>
       </Card>
-      
-      {/* Login Link */}
-      <div style={{ textAlign: 'center', marginTop: 16 }}>
-        <Typography variant="body2">
-          Already have an account? <Link to="/login">Log In</Link>
-        </Typography>
-      </div>
     </Container>
   );
 };

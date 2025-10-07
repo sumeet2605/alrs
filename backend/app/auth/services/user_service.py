@@ -6,6 +6,7 @@ from app.auth.models.user_model import User
 from app.auth.schemas.user_schema import UserRegistration
 from app.auth.utils.password_hasher import get_password_hash
 from datetime import datetime, timedelta
+from app.auth.models.role_model import Role
 
 def create_new_user(user_data: UserRegistration, db: Session) -> User:
     """
@@ -33,11 +34,14 @@ def create_new_user(user_data: UserRegistration, db: Session) -> User:
 
     # If no conflicts, create the user
     hashed_password = get_password_hash(user_data.password)
+    print(user_data.role)
+    role = db.query(Role).filter(Role.name == user_data.role.lower()).first()
     new_user = User(
         username=user_data.username,
         email=user_data.email,
         full_name=user_data.full_name,
-        hashed_password=hashed_password
+        hashed_password=hashed_password,
+        role = role.id
     )
     db.add(new_user)
     db.commit()

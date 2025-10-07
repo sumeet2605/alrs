@@ -128,7 +128,13 @@ const AdminUsersPage: React.FC = () => {
       
       <Card 
         title="Registered Studio Users" 
-        extra={<Button type="primary" onClick={fetchUsers}>Refresh List</Button>}
+        extra={<Space>
+                <Button type="primary" onClick={() => navigate('/register')}>
+                    Add New User
+                </Button>
+                <Button onClick={fetchUsers}>Refresh List</Button>
+            </Space>}
+        
       >
         <Table 
           columns={columns} 

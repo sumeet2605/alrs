@@ -14,7 +14,7 @@ from app.auth.services.dependencies import get_current_user, get_optional_curren
 from app.auth.utils.password_hasher import get_password_hash as hash_password, verify_password
 from app.gallery.utils.tokens import create_gallery_access_token, verify_gallery_access_token
 from pathlib import Path
-from app.gallery.utils.download import download_gallery_disk, check_gallery_access, prepare_gallery_file_list_by_size
+from app.gallery.utils.download import check_gallery_access
 from app.gallery.services.paths import previews_dir, thumbs_dir, downloads_dir
 from fastapi.responses import FileResponse, StreamingResponse #type: ignore
 from app.gallery.utils.download_helper import ensure_cached_download_for_photo
