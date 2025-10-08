@@ -21,8 +21,8 @@ class UserRegistration(BaseModel):
         min_length=8,
         description="Password must meet complexity rules."
     )
-    role: str = Field(
-        "Client",
+    role: int = Field(
+        ...,
         description="Role of the user, defaults to 'Client'."
     )
 

@@ -35,13 +35,14 @@ def create_new_user(user_data: UserRegistration, db: Session) -> User:
     # If no conflicts, create the user
     hashed_password = get_password_hash(user_data.password)
     print(user_data.role)
-    role = db.query(Role).filter(Role.name == user_data.role.lower()).first()
+    role = db.query(Role).filter(Role.id == user_data.role).first()
+    
     new_user = User(
         username=user_data.username,
         email=user_data.email,
         full_name=user_data.full_name,
         hashed_password=hashed_password,
-        role = role.id
+        role = role
     )
     db.add(new_user)
     db.commit()
@@ -93,3 +94,7 @@ def update_user_failed_attempts(user: User, db: Session, increment: bool = True)
 
     db.commit()
     db.refresh(user)
+
+
+def get_all_roles(db:Session) -> list[Role]:
+    return db.query(Role).all()

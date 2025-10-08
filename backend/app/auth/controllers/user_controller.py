@@ -4,7 +4,7 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
 # controllers/user_controller.py
 from fastapi import APIRouter, Depends, status, HTTPException, BackgroundTasks # type: ignore 
 from sqlalchemy.orm import Session  # type: ignore
-from app.auth.schemas.user_schema import UserRegistration, UserResponse
+from app.auth.schemas.user_schema import UserRegistration, UserResponse, RoleResponse
 from app.auth.services import user_service, email_service
 from app.database import get_db
 from app.auth.models.user_model import User
@@ -54,3 +54,13 @@ def list_all_users(token: Annotated[str, Depends(oauth2_scheme)], db: Session = 
     """
     all_users = user_service.get_all_users(db)
     return all_users
+
+@router.get(
+    "/roles",
+    status_code=status.HTTP_200_OK,
+    summary="List all users",
+    response_model=list[RoleResponse]
+)
+def list_all_roles(db: Session = Depends(get_db)):
+    roles = user_service.get_all_roles(db)
+    return roles

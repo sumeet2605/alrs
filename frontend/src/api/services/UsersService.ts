@@ -4,6 +4,7 @@
 /* eslint-disable */
 import type { UserRegistration } from '../models/UserRegistration';
 import type { UserResponse } from '../models/UserResponse';
+import type { RoleResponse } from '../models/RoleResponse';
 import type { CancelablePromise } from '../core/CancelablePromise';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
@@ -41,6 +42,18 @@ export class UsersService {
         return __request(OpenAPI, {
             method: 'GET',
             url: '/api/users',
+        });
+    }
+
+    /**
+     * List all users
+     * @returns RoleResponse Successful Response
+     * @throws ApiError
+     */
+    public static listAllRolesApiRolesGet(): CancelablePromise<Array<RoleResponse>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/roles',
         });
     }
 }
