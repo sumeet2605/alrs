@@ -156,7 +156,7 @@ def list_photos(gallery_id: str,request: Request, db: Session = Depends(get_db),
     if not gallery:
         raise HTTPException(status_code=404, detail="Gallery not found")
     allowed = False
-    if user and gallery.owner_id == user.id:
+    if user:
         allowed = True
     elif gallery.is_public:
         allowed = True

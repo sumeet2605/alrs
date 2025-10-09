@@ -55,8 +55,9 @@ def get_optional_current_user(
     except Exception:
         # token invalid -> behave as unauthenticated
         return None
-
+    # print(token_data.username)
     user = user_service.get_user_by_username(token_data.username, db)
+    # print(user)
     if not user:
         return None
     return user
