@@ -20,7 +20,7 @@ export type OpenAPIConfig = {
 };
 
 export const OpenAPI: OpenAPIConfig = {
-    BASE: 'http://localhost:8000',
+    BASE: 'https://alrs-backend-412832979617.asia-south1.run.app',
     VERSION: '1.0.0',
     WITH_CREDENTIALS: true,
     CREDENTIALS: 'include',

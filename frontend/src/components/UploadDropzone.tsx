@@ -2,7 +2,7 @@
 import React, { useCallback, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { GalleryService } from "../api/services/GalleryService";
-import { Spin, message, Progress } from "antd";
+import { Spin, App, Progress } from "antd";
 import type { AxiosProgressEvent } from "axios";
 
 type Props = {
@@ -13,6 +13,7 @@ type Props = {
 export const UploadDropzone: React.FC<Props> = ({ galleryId, onComplete }) => {
   const [uploading, setUploading] = useState(false);
   const [percent, setPercent] = useState<number | null>(null);
+  const { message } = App.useApp();
 
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (!acceptedFiles.length) return;

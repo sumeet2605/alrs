@@ -31,7 +31,7 @@ def add_favorite(
     db: Session = Depends(get_db),
     current_user = Depends(get_optional_current_user),
 ):
-    gallery = gcrud.get_gallery(db, gallery_id)
+    gallery = gcrud.get_gallery(db, str(gallery_id))
     if not gallery:
         raise HTTPException(404, "Gallery not found")
     selector = get_selector_for_request(request, gallery_id, current_user)
@@ -64,7 +64,7 @@ def set_favorites_limit(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user),  # must be owner
 ):
-    gallery = gcrud.get_gallery(db, gallery_id)
+    gallery = gcrud.get_gallery(db, str(gallery_id))
     if not gallery:
         raise HTTPException(404, "Gallery not found")
     if gallery.owner_id != current_user.id:
@@ -72,3 +72,4 @@ def set_favorites_limit(
     limit = payload.get("limit", None)  # null to reset to default
     gallery = fsvc.set_gallery_favorites_limit(db, gallery, limit)
     return {"favorites_limit": gallery.favorites_limit}
+

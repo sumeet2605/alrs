@@ -1,5 +1,5 @@
 // src/pages/Settings/BrandingPage.tsx
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Card,
   Form,

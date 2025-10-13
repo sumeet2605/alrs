@@ -1,9 +1,21 @@
 # backend/app/config.py
 from pathlib import Path
 import os
+import google.cloud.storage
+import os #
+origins = os.getenv("ORIGINS", "")
+
+origins_list = origins = [origin.strip() for origin in origins.split(",") if origin.strip()]
+
+if not origins:
+    FRONTEND_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+else:
+
+    FRONTEND_ORIGINS = origins_list
 
 STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "gcs")
 
+print(f"DEBUG: Installed google-cloud-storage version: {google.cloud.storage.__version__}")
 
 # For GCS
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "")

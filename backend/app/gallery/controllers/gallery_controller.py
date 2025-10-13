@@ -158,8 +158,6 @@ def list_photos(gallery_id: str,request: Request, db: Session = Depends(get_db),
     allowed = False
     if user:
         allowed = True
-    elif gallery.is_public:
-        allowed = True
     else:
         token = request.cookies.get(f"gallery_access_{gallery_id}")
         if token and verify_gallery_access_token(token, gallery_id):

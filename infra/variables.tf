@@ -63,8 +63,16 @@ variable "image_uri" {
   type        = string
 }
 
-variable "secrets" {
-  description = "Map of secret names -> values to create in Secret Manager. Values should be provided by CI / secure input."
+# Non-sensitive list of secret ids (keys)
+variable "secret_names" {
+  description = "List of secret ids to create in Secret Manager (e.g. [\"DB_PASSWORD\",\"JWT_SECRET\"])"
+  type        = list(string)
+  default     = ["DB_PASSWORD", "SECRET_KEY", "RESEND_API_KEY", "EMAIL_SENDER", "GCS_BUCKET_NAME"]
+}
+
+# Sensitive map of secret values keyed by secret id (values supplied securely)
+variable "secret_values" {
+  description = "Map of secret id -> secret value (sensitive). Provide via CI or terraform.tfvars (secure)."
   type        = map(string)
   sensitive   = true
   default     = {}

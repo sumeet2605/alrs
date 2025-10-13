@@ -5,12 +5,16 @@ from pathlib import Path
 from app import config
 import io, os
 from datetime import datetime, timedelta
+from google.auth.transport import requests
+from google.auth import default, compute_engine
 
 # pip install google-cloud-storage
 from google.cloud import storage as gcs #type: ignore
 from google.oauth2 import service_account #type: ignore
 
 project_id = config.GCP_PROJECT_ID
+SERVICE_ACCOUNT_EMAIL = "alrs-cloudrun-sa@alrprod.iam.gserviceaccount.com" 
+
 
 class GCSStorage(Storage):
     def __init__(self):
@@ -69,6 +73,17 @@ class GCSStorage(Storage):
         """
         Generate a V4 signed URL for the given object with optional headers.
         """
+        credentials, _ = default()
+    
+        # then within your abstraction
+        auth_request = requests.Request()
+        credentials.refresh(auth_request)
+        
+        signing_credentials = compute_engine.IDTokenCredentials(
+            auth_request,
+            "",
+            service_account_email=credentials.service_account_email
+        )
         blob = self._blob(key)
         params = {}
         if content_disposition:
@@ -79,10 +94,12 @@ class GCSStorage(Storage):
         # Use UTC for expiration
         expiration = datetime.utcnow() + timedelta(seconds=expires)
         return blob.generate_signed_url(
+            version="v4",
             expiration=expiration,
             method=method,
             response_disposition=content_disposition,
             response_type=content_type,
+            credentials=signing_credentials,
             # For older google-cloud-storage versions, use query_parameters=params
             # Newer versions accept response_* kwargs directly as above.
         )

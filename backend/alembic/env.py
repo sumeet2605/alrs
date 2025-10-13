@@ -4,6 +4,7 @@ from sqlalchemy import engine_from_config #type: ignore
 from sqlalchemy import pool #type: ignore
 from dotenv import load_dotenv #type: ignore
 load_dotenv()
+import os
 
 from alembic import context    #type: ignore
 from app.database import Base  # Import your Base here
@@ -18,11 +19,14 @@ from app.gallery.models.favorite_model import Favorite
 # access to the values within the .ini file in use.
 config = context.config
 
+db_url = os.getenv("SQLALCHEMY_DATABASE_URL")
+
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+config.set_main_option("sqlalchemy.url", db_url)
 # add your model's MetaData object here
 # for 'autogenerate' support
 # from myapp import mymodel
@@ -31,7 +35,7 @@ target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
+# my_important_option = config.get_main_option("my_important_option") 
 # ... etc.
 
 

@@ -120,7 +120,7 @@ export const GalleryEditor: React.FC = () => {
       if (!id) return;
       setLoadingFavLimit(true);
       try {
-        const resp = await FavoritesService.getFavoritesLimitApiGalleriesGalleryIdFavoritesLimitGet?.(id);
+        const resp = await (FavoritesService as any).getFavoritesLimitApiGalleriesGalleryIdFavoritesLimitGet?.(id);
         // Accept either {limit: number|null} or raw number
         const value =
           resp && typeof resp === "object" && "limit" in (resp as any)
@@ -247,8 +247,8 @@ export const GalleryEditor: React.FC = () => {
               if (!id) return;
               try {
                 setSavingFavLimit(true);
-                await FavoritesService.setFavoritesLimitApiGalleriesGalleryIdFavoritesLimitPut?.(
-                  id,
+                await (FavoritesService as any).setFavoritesLimitApiGalleriesGalleryIdFavoritesLimitPut?.(
+                  Number(id),
                   { limit: favLimit ?? null }
                 );
                 message.success("Favorites limit saved");

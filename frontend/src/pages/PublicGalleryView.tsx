@@ -161,7 +161,7 @@ const PublicGalleryView: React.FC = () => {
   const loadFavorites = useCallback(async () => {
     if (!id) return;
     try {
-      const resp: any = await FavoritesService.getFavoritesApiGalleriesGalleryIdFavoritesGet(id);
+      const resp: any = await (FavoritesService as any).getFavoritesApiGalleriesGalleryIdFavoritesGet?.(Number(id))
       const ids: string[] = (resp?.photo_ids ?? []).map((n: any) => String(n));
       setFavoriteIds(new Set(ids));
       setFavLimit(resp?.limit ?? null);
@@ -221,7 +221,7 @@ const PublicGalleryView: React.FC = () => {
     const isFav = favoriteIds.has(photoId);
     try {
       if (isFav) {
-        await FavoritesService.removeFavoriteApiGalleriesGalleryIdFavoritesPhotoIdDelete(id, photoId);
+        await (FavoritesService as any).removeFavoriteApiGalleriesGalleryIdFavoritesPhotoIdDelete?.(Number(id), photoId);
         const next = new Set(favoriteIds);
         next.delete(photoId);
         setFavoriteIds(next);
@@ -233,7 +233,7 @@ const PublicGalleryView: React.FC = () => {
           });
           return;
         }
-        await FavoritesService.addFavoriteApiGalleriesGalleryIdFavoritesPhotoIdPost(id, photoId);
+        await (FavoritesService as any).addFavoriteApiGalleriesGalleryIdFavoritesPhotoIdPost?.(Number(id), photoId);
         const next = new Set(favoriteIds);
         next.add(photoId);
         setFavoriteIds(next);

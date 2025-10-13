@@ -1,6 +1,6 @@
 // frontend/src/components/GalleryCard.tsx
 import React, { useState } from "react";
-import { Card, Tooltip, message, Button, Modal, Input, Checkbox, Space } from "antd";
+import { Card, Tooltip, App, Button, Modal, Input, Checkbox, Space } from "antd";
 import Meta from "antd/es/card/Meta";
 import { Link } from "react-router-dom";
 import { OpenAPI } from "../api/core/OpenAPI";
@@ -21,6 +21,7 @@ export const GalleryCard: React.FC<Props> = ({ id, title, coverUrl, description,
   const [password, setPassword] = useState("");
   const [makePublicChecked, setMakePublicChecked] = useState(true);
   const [loading, setLoading] = useState(false);
+  const { message } = App.useApp();
 
   const resolveUrl = (url?: string | null) => {
     if (!url) return null;

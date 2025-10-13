@@ -13,9 +13,6 @@ fi
 echo "Running alembic migrations..."
 alembic upgrade head
 
-# Create super admin if missing (if your code supports it via env)
-python -c "from app.auth.services.user_service import create_super_admin; create_super_admin()"
-
 # Start uvicorn
 echo "Starting server..."
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4

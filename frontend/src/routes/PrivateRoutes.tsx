@@ -1,5 +1,5 @@
 // src/routes/PrivateRoutes.tsx
-import React from "react";
+
 import { Route } from "react-router-dom";
 import DefaultLayout from "../components/Layout/DefaultLayout";
 import DashboardPage from "../pages/DashboardPage";

@@ -6,7 +6,6 @@ from app.auth.controllers import user_controller, auth_controller, admin_control
 from app.auth.services.user_service import create_super_admin
 from os import getenv
 from dotenv import load_dotenv # type: ignore
-from app.startup import lifespan
 from slowapi import Limiter # type: ignore
 from slowapi.util import get_remote_address # type: ignore
 from starlette.middleware import Middleware # type: ignore
@@ -21,16 +20,13 @@ from app.brand import controllers as brand_controllers
 
 load_dotenv()
 
-FRONTEND_ORIGINS = [
-    "http://localhost:5173",    # Vite dev server
-    "http://127.0.0.1:5173"
-]
+
 # The 'lifespan=lifespan' parameter is the critical fix.
-app = FastAPI(title="Alluring Lens Studios API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Alluring Lens Studios API", version="1.0.0")
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=FRONTEND_ORIGINS,
+    allow_origins=config.FRONTEND_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

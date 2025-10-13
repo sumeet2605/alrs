@@ -1,5 +1,4 @@
 // src/routes/PublicRoutes.tsx
-import React from "react";
 import { Route, Navigate } from "react-router-dom";
 
 import LoginPage from "../pages/LoginPage";

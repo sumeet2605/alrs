@@ -99,8 +99,10 @@ def refresh_token(
         new_refresh_encoded,
         max_age=REFRESH_COOKIE_MAX_AGE,
         httponly=True,
-        secure=False,  # For local development
-        samesite="lax"  # For local development
+        secure=True,  # For local development
+        samesite=None,
+        domain=".alluringlensstudios.com",
+        path="/api"  # For local development
     )
     db.add(rt)
     db.commit()

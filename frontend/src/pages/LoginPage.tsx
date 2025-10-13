@@ -1,5 +1,5 @@
 import React from 'react';
-import { Form, Input, Card, message } from 'antd';
+import { Form, Input, Card, App } from 'antd';
 import { MailOutlined, LockOutlined } from '@ant-design/icons';
 import Button from '@mui/material/Button';
 import Typography from '@mui/material/Typography';
@@ -12,7 +12,7 @@ const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const { login, isAuthenticated } = useAuth();
   const [loading, setLoading] = React.useState(false);
-
+  const { message } = App.useApp();
   // Redirect if already authenticated
   React.useEffect(() => {
     if (isAuthenticated) {

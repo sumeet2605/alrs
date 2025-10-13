@@ -1,6 +1,6 @@
 // src/components/DefaultLayout.tsx
 import React, { useState, useMemo } from 'react';
-import { Layout, Menu, theme, message, Dropdown, Avatar } from 'antd';
+import { Layout, Menu, theme, App, Dropdown, Avatar } from 'antd';
 import {
   HomeOutlined,
   UserOutlined,
@@ -22,7 +22,7 @@ const DefaultLayout: React.FC = () => {
   const { logout, userRole } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-
+  const { message } = App.useApp();
   const {
     token: { colorBgContainer, borderRadiusLG },
   } = theme.useToken();

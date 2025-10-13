@@ -1,18 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Card, Tag, Spin, Space, Button, message } from 'antd';
+import { Table, Card, Tag, Spin, Space, Button, App } from 'antd';
 import type { UserResponse } from '../api/models/UserResponse'; // Generated type
 import { UsersService } from '../api/services/UsersService'; // Generated service
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import Typography from '@mui/material/Typography';
 import { CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
+import type { ColumnsType } from "antd/es/table";
+
 
 const AdminUsersPage: React.FC = () => {
   const { userRole } = useAuth();
   const navigate = useNavigate();
   const [users, setUsers] = useState<UserResponse[]>([]);
   const [loading, setLoading] = useState(true);
-
+  const { message } = App.useApp();
   // 1. Role Check
   useEffect(() => {
     if (userRole !== 'Owner') {
@@ -44,7 +46,7 @@ const AdminUsersPage: React.FC = () => {
   }, []); // Run only once on mount
 
   // 3. Table Column Definition
-  const columns = [
+  const columns: ColumnsType<UserResponse>  = [
     {
       title: 'Username',
       dataIndex: 'username',
@@ -63,41 +65,52 @@ const AdminUsersPage: React.FC = () => {
       render: (text: string | null) => text || 'N/A', // Handle optional field
     },
     {
-      title: 'Role',
-      dataIndex: 'role',
-      key: 'role',
-      render: (role: string) => {
-        const color = role === 'Owner' ? 'volcano' : 'geekblue';
-        return <Tag color={color}>{role.name.toUpperCase()}</Tag>;
-      },
-      filters: [
-        { text: 'Owner', value: 'Owner' },
-        { text: 'Client', value: 'Client' },
-      ],
-      onFilter: (value: string | number | boolean, record: UserResponse) => record.role.indexOf(value as string) === 0,
+    title: "Role",
+    dataIndex: "role",
+    key: "role",
+    render: (role: any) => {
+      const roleName = typeof role === "string" ? role : (role?.name ?? String(role));
+      const color = roleName === "Owner" ? "blue" : "default";
+      return <Tag color={color}>{roleName.toUpperCase()}</Tag>;
     },
+    filters: [
+      { text: "Owner", value: "Owner" },
+      { text: "Admin", value: "Admin" },
+      { text: "User", value: "User" },
+    ],
+    // Accept any incoming filter value and normalize to string for comparison
+    onFilter: (value: any, record: UserResponse) => {
+      const roleVal = String((record.role as any) ?? "");
+      return roleVal.indexOf(String(value)) === 0;
+    },
+  },
     {
-      title: 'Active',
-      dataIndex: 'is_active',
-      key: 'is_active',
-      render: (is_active: boolean) => (
+    title: "Active",
+    dataIndex: "is_active",
+    key: "is_active",
+    filters: [
+      { text: "Active", value: true },
+      { text: "Inactive", value: false },
+    ],
+    // incoming value could be boolean or a Key; normalize to string before compare
+    onFilter: (value: any, record: UserResponse) => {
+      return String(record.is_active) === String(value);
+    },
+    render: (is_active: boolean) => (
         is_active 
           ? <Tag icon={<CheckCircleOutlined />} color="success">Active</Tag>
           : <Tag icon={<CloseCircleOutlined />} color="error">Inactive</Tag>
       ),
-      filters: [
-        { text: 'Active', value: true },
-        { text: 'Inactive', value: false },
-      ],
-      onFilter: (value: string | number | boolean, record: UserResponse) => record.is_active === value,
-    },
+  },
+
+    
     {
       title: 'Action',
       key: 'action',
-      render: (text: string, record: UserResponse) => (
+      render: (_text: string, record: UserResponse) => (
         <Space size="middle">
           <Button size="small" type="primary" onClick={() => message.info(`Viewing ${record.username}`)}>View</Button>
-          <Button size="small" danger onClick={() => message.warn(`Deactivating ${record.username}`)}>Deactivate</Button>
+          <Button size="small" danger onClick={() => (message as any).warn(`Deactivating ${record.username}`)}>Deactivate</Button>
         </Space>
       ),
     },

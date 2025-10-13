@@ -1,6 +1,6 @@
 // frontend/src/pages/Dashboard/GalleryList.tsx
 import React, { useEffect, useState, useCallback } from "react";
-import { Button, Row, Col, Modal, Input, Space, message } from "antd";
+import { Button, Row, Col, Modal, Input, Space, App } from "antd";
 import { GalleryCard } from "../../components/GalleryCard";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { GalleryService } from "../../api/services/GalleryService";
@@ -18,7 +18,8 @@ type Gallery = {
 
 export const GalleryList: React.FC = () => {
   const [galleries, setGalleries] = useState<Gallery[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [_loading, setLoading] = useState(false);
+  const { message } = App.useApp();
 
   // modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
