@@ -67,9 +67,21 @@ def set_favorites_limit(
     gallery = gcrud.get_gallery(db, str(gallery_id))
     if not gallery:
         raise HTTPException(404, "Gallery not found")
-    if gallery.owner_id != current_user.id:
+    if not current_user.id:
         raise HTTPException(403, "Not allowed")
     limit = payload.get("limit", None)  # null to reset to default
     gallery = fsvc.set_gallery_favorites_limit(db, gallery, limit)
     return {"favorites_limit": gallery.favorites_limit}
 
+@router.get("/{gallery_id}/favorites/limit")
+def get_favorites_limit(
+    gallery_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user),  # must be owner
+):
+    gallery = gcrud.get_gallery(db, str(gallery_id))
+    if not gallery:
+        raise HTTPException(404, "Gallery not found")
+    if not current_user.id:
+        raise HTTPException(403, "Not allowed")
+    return {"limit": gallery.favorites_limit}

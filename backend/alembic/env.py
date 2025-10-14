@@ -15,11 +15,12 @@ from app.auth.models.refresh_token_model import RefreshToken  # Import all your 
 from app.gallery.models.gallery_model import Gallery, Photo, Branding
 from app.brand.watermark import BrandSettings
 from app.gallery.models.favorite_model import Favorite
+from app.settings import settings
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
-db_url = os.getenv("SQLALCHEMY_DATABASE_URL")
+db_url = settings.SQLALCHEMY_DATABASE_URL
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.

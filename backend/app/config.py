@@ -26,10 +26,10 @@ STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "local")
 print(f"DEBUG: Installed google-cloud-storage version: {google.cloud.storage.__version__}")
 
 # For GCS
-GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "")
-GCS_SIGNED_URL_EXP_SECONDS = int(os.getenv("GCS_SIGNED_URL_EXP_SECONDS", "3600"))
-GCS_CREDENTIALS_JSON = os.getenv("GCS_CREDENTIALS_JSON", "")  # path to service account json, or empty to use default creds
-GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
+GCS_BUCKET_NAME = settings.GCS_BUCKET_NAME
+GCS_SIGNED_URL_EXP_SECONDS = int(settings.GCS_SIGNED_URL_EXP_SECONDS)
+GCS_CREDENTIALS_JSON = settings.GCS_CREDENTIALS_JSON  # path to service account json, or empty to use default creds
+GCP_PROJECT_ID = settings.GCP_PROJECT_ID
 
 # image sizes
 IMAGE_SIZES = {

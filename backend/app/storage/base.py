@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import BinaryIO, Optional, Iterator
+from typing import BinaryIO, Optional, Iterator, Any
 from pathlib import Path
 from abc import ABC, abstractmethod
 
@@ -8,6 +8,21 @@ class Storage:
     Common interface for Local and GCS storage backends.
     Keys should be POSIX-like paths (e.g. '1/42/originals/uuid.jpg').
     """
+    @abstractmethod
+    def _bucket(self) -> Any:
+        """
+        Return a storage-provider-specific blob object for key.
+        Concrete implementations (GCSStorage) must implement this.
+        """
+        raise NotImplementedError
+    
+    @abstractmethod
+    def _blob(self, key: str) -> Any:
+        """
+        Return a storage-provider-specific blob object for key.
+        Concrete implementations (GCSStorage) must implement this.
+        """
+        raise NotImplementedError
 
     def save_fileobj(self, fileobj: BinaryIO, key: str, content_type: Optional[str] = None) -> str:
         """Save stream to storage at key. Returns canonical stored key."""
@@ -62,4 +77,16 @@ class Storage:
         buf = io.BytesIO(data)
         buf.seek(0)
         return self.save_fileobj(buf, key)
-
+    
+    def generate_signed_upload_url(
+        self,
+        key: str,
+        expires: int = 15 * 60,
+        *,
+        content_type: Optional[str] = "application/octet-stream",
+    ) -> str:
+        """
+        Generate a V4 signed URL suitable for uploading a file with PUT.
+        Returns a URL that accepts a PUT with `Content-Type` = content_type.
+        """
+        raise NotImplementedError

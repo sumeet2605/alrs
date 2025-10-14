@@ -11,6 +11,7 @@ from google.auth import default, compute_engine #type: ignore
 # pip install google-cloud-storage
 from google.cloud import storage as gcs #type: ignore
 from google.oauth2 import service_account #type: ignore
+from app.settings import settings
 
 project_id = config.GCP_PROJECT_ID
 SERVICE_ACCOUNT_EMAIL = "alrs-cloudrun-sa@alrprod.iam.gserviceaccount.com" 
@@ -29,6 +30,9 @@ class GCSStorage(Storage):
         else:
             self.client = gcs.Client()  # default creds
         self.bucket = self.client.bucket(self.bucket_name)
+
+    def _bucket(self):
+        return self.bucket
 
     def _blob(self, key: str):
         # normalize key: remove leading slashes
@@ -73,36 +77,49 @@ class GCSStorage(Storage):
         """
         Generate a V4 signed URL for the given object with optional headers.
         """
-        credentials, _ = default()
-    
-        # then within your abstraction
-        auth_request = requests.Request()
-        credentials.refresh(auth_request)
-        
-        signing_credentials = compute_engine.IDTokenCredentials(
-            auth_request,
-            "",
-            service_account_email=credentials.service_account_email
-        )
         blob = self._blob(key)
         params = {}
         if content_disposition:
             params["response-content-disposition"] = content_disposition
         if content_type:
             params["response-content-type"] = content_type
-
-        # Use UTC for expiration
         expiration = datetime.utcnow() + timedelta(seconds=expires)
-        return blob.generate_signed_url(
-            version="v4",
-            expiration=expiration,
-            method=method,
-            response_disposition=content_disposition,
-            response_type=content_type,
-            credentials=signing_credentials,
+
+        if settings.ENV.lower() == "production":
+            credentials, _ = default()
+    
+        # then within your abstraction
+            auth_request = requests.Request()
+            credentials.refresh(auth_request)
+        
+            signing_credentials = compute_engine.IDTokenCredentials(
+                auth_request,
+                "",
+                service_account_email=credentials.service_account_email
+            )
+        
+        # Use UTC for expiration
+       
+            return blob.generate_signed_url(
+                version="v4",
+                expiration=expiration,
+                method=method,
+                response_disposition=content_disposition,
+                response_type=content_type,
+                credentials=signing_credentials,
             # For older google-cloud-storage versions, use query_parameters=params
             # Newer versions accept response_* kwargs directly as above.
-        )
+            )
+        else:
+            return blob.generate_signed_url(
+                version="v4",
+                expiration=expiration,
+                method=method,
+                response_disposition=content_disposition,
+                response_type=content_type,
+            # For older google-cloud-storage versions, use query_parameters=params
+            # Newer versions accept response_* kwargs directly as above.
+            )
 
     # Back-compat shim (if anything still calls this)
     
@@ -124,3 +141,16 @@ class GCSStorage(Storage):
         # Requires google-cloud-storage >= 2.10
         blob = self._blob(key)
         return blob.open("rb")
+    
+    def generate_signed_upload_url(
+        self,
+        key: str,
+        expires: int = 15 * 60,
+        *,
+        content_type: Optional[str] = "application/octet-stream",
+    ) -> str:
+        """
+        Generate a V4 signed URL suitable for uploading a file with PUT.
+        Returns a URL that accepts a PUT with `Content-Type` = content_type.
+        """
+        return self.generate_signed_url(key, expires=expires, content_type=content_type, method="PUT")

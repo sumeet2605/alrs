@@ -3,6 +3,20 @@ from pydantic import BaseModel, Field #type: ignore
 from typing import Optional, List, Union
 from datetime import datetime
 
+class SignedUrlRequest(BaseModel):
+    filename: str
+    content_type: str | None = "application/octet-stream"
+
+class NotifyPayload(BaseModel):
+    filename: str
+    object_name: str
+    gs_path: str
+    size: int | None = None
+
+class ResumableRequest(BaseModel):
+    filename: str
+    content_type: Optional[str] = "application/octet-stream"
+
 class GalleryCreate(BaseModel):
     title: str
     description: Optional[str] = None

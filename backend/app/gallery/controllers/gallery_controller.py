@@ -7,7 +7,7 @@ from app import config, images
 import shutil
 import os
 import uuid
-from app.gallery.schemas.gallery_schema import GalleryCreate
+from app.gallery.schemas.gallery_schema import GalleryCreate, SignedUrlRequest, NotifyPayload, ResumableRequest
 from app.gallery.models.gallery_model import Gallery, Photo
 from app.gallery.services import gallery_service as crud
 from app.auth.services.dependencies import get_current_user, get_optional_current_user
@@ -22,6 +22,7 @@ from app.storage import storage
 from app.gallery.utils.image_pipline import process_image_pipeline
 from app.gallery.utils.urls import url_from_path
 from app.gallery.utils.zip_gcs import signed_zip_url, ensure_zip_in_gcs, zip_key
+from app.settings import settings
 
 
 router = APIRouter(tags=["Gallery"])
@@ -52,6 +53,82 @@ async def get_gallery(
     gallery_id: str,
     db: Session = Depends(get_db)):
     return crud.get_gallery(db, gallery_id)
+
+
+@router.post("/galleries/{gallery_id}/signed-upload")
+def create_signed_upload_url(gallery_id: str, payload: SignedUrlRequest, user=Depends(get_current_user)):
+    """
+    Generates a V4 signed PUT URL for direct upload to GCS.
+    Returns: { signed_url, object_name, gs_path }
+    """
+    bucket_name = config.GCS_BUCKET_NAME
+    if not bucket_name:
+        raise HTTPException(status_code=500, detail="GCS_BUCKET_NAME not configured")
+    key = f"{gallery_id}/original/{payload.filename}"
+    signed_url = storage.generate_signed_upload_url(key, content_type=payload.content_type)
+    return {"signed_url": signed_url, "object_name": key, "gs_path": f"gs://{bucket_name}/{key}"}
+
+@router.post("/galleries/{gallery_id}/resumable-upload")
+def create_resumable_upload_session(gallery_id: str, payload: ResumableRequest, user=Depends(get_current_user)):
+    """
+    Returns: { upload_url, object_name, gs_path }
+    `upload_url` is the resumable session URI to which the client will PUT chunks.
+    The stored object name preserves original filename at the end inside a uuid folder.
+    """
+    if not payload or not payload.filename:
+        raise HTTPException(status_code=400, detail="filename required")
+
+    safe_filename = os.path.basename(payload.filename).replace("/", "_").replace("\\", "_")
+    object_name = f"{gallery_id}/original/{safe_filename}"
+
+    try:
+        # google-cloud-storage: create a blob object and call create_resumable_upload_session
+        bucket = storage._bucket()  # your gcs bucket object from GCSStorage
+        blob = bucket.blob(object_name)
+        # content_type must match the client's Content-Type
+        upload_url = blob.create_resumable_upload_session(content_type=payload.content_type or "application/octet-stream")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"failed to create resumable session: {exc}")
+
+    bucket_name = getattr(bucket, "name", os.environ.get("GCS_BUCKET_NAME", ""))
+    return {"upload_url": upload_url, "object_name": object_name, "gs_path": f"gs://{bucket_name}/{object_name}"}
+
+@router.post("/galleries/{gallery_id}/photos/notify-upload", status_code=201)
+def notify_upload(gallery_id: str, payload: NotifyPayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db), user=Depends(get_current_user)):
+    """
+    Client calls this after uploading the object to GCS to create DB record and schedule processing.
+    """
+    # Basic validation
+    if not payload.filename or not payload.object_name or not payload.gs_path:
+        raise HTTPException(status_code=400, detail="Missing required fields")
+
+    # sanitize and confirm object_name ends with the filename (sanity check)
+    safe_filename = os.path.basename(payload.filename).replace("/", "_").replace("\\", "_")
+    if not payload.object_name.endswith(f"/{safe_filename}"):
+        raise HTTPException(status_code=400, detail="object_name does not match filename")
+
+    # ensure object_name mapping to gallery_id (prevents spoofing)
+    if not payload.object_name.startswith(f"{gallery_id}/"):
+        raise HTTPException(status_code=400, detail="object_name does not match gallery_id")
+
+    # create DB record using existing crud.create_photo signature
+    try:
+        p = crud.create_photo(
+            db,
+            gallery_id=str(gallery_id),
+            filename=payload.filename,
+            ext=os.path.splitext(payload.filename)[1].lower() or ".jpg",
+            path_original=payload.gs_path,
+            file_id=str(uuid.uuid4()),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to create photo record: {exc}")
+
+    # schedule background processing (uses your existing pipeline)
+    background_tasks.add_task(process_image_pipeline, p.filename, p.path_original, str(user.id), str(gallery_id))
+
+    return {"id": p.id, "path_original": url_from_path(p.path_thumb if p.path_thumb else p.path_original)}
+    
 
 
 @router.post("/galleries/{gallery_id}/photos", status_code=201)

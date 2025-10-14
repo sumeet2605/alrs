@@ -15,10 +15,11 @@ from app.auth.schemas.auth_schema import Token, TokenData
 from sqlalchemy.orm import Session #type: ignore
 from fastapi import HTTPException, status   #type: ignore
 from app.auth.models.refresh_token_model import RefreshToken
+from app.settings import settings
 
-REFRESH_TOKEN_EXPIRE_DAYS = int(getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7))
-ACCESS_TOKEN_EXPIRE_MINUTES = int(getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
-SECRET_KEY = getenv("SECRET_KEY")
+REFRESH_TOKEN_EXPIRE_DAYS = int(settings.REFRESH_TOKEN_EXPIRE_DAYS)
+ACCESS_TOKEN_EXPIRE_MINUTES = int(settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+SECRET_KEY = settings.SECRET_KEY
 ALGORITHM = "HS256"
 
 def generate_jti() -> str:
