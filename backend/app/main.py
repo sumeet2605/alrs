@@ -17,12 +17,13 @@ from app.gallery.controllers import gallery_controller, favorites_controller
 from app import config
 from starlette.staticfiles import StaticFiles #type:ignore
 from app.brand import controllers as brand_controllers
+from app.settings import settings
 
 load_dotenv()
 
-
 # The 'lifespan=lifespan' parameter is the critical fix.
-app = FastAPI(title="Alluring Lens Studios API", version="1.0.0")
+app = FastAPI(title="Alluring Lens Studios API", version="1.0.0", debug=settings.DEBUG)
+print(config.FRONTEND_ORIGINS)
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -31,6 +32,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+print(settings.DEBUG)
+@app.get("/config")
+def read_config():
+    return {
+        "environment": settings.ENV,
+        "debug": settings.DEBUG,
+        "database": settings.DATABASE_URL,
+    }
 
 
 app.state.limiter = limiter

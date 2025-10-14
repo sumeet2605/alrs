@@ -24,7 +24,7 @@ function RootApp() {
     token: { colorPrimary: "#722ed1", borderRadius: 8, fontFamily: "Inter, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif" },
     algorithm: darkMode ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
   }), [darkMode]);
-
+  // console.log(import.meta.env.VITE_API_BASE);
   return (
     <ThemeContext.Provider value={contextValue}>
       <ConfigProvider theme={antdThemeConfig}>

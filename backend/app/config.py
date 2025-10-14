@@ -1,11 +1,19 @@
 # backend/app/config.py
 from pathlib import Path
 import os
-import google.cloud.storage
+import google.cloud.storage #type: ignore
 import os #
+from app.settings import settings
+
 origins = os.getenv("ORIGINS", "")
 
 origins_list = origins = [origin.strip() for origin in origins.split(",") if origin.strip()]
+
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", BASE_DIR / "media"))
+MEDIA_ROOT.mkdir(parents=True, exist_ok=True)
+
 
 if not origins:
     FRONTEND_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
@@ -13,7 +21,7 @@ else:
 
     FRONTEND_ORIGINS = origins_list
 
-STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "gcs")
+STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "local")
 
 print(f"DEBUG: Installed google-cloud-storage version: {google.cloud.storage.__version__}")
 

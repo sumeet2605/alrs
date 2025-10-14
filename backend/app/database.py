@@ -3,9 +3,10 @@ from sqlalchemy.ext.declarative import declarative_base #type: ignore
 from sqlalchemy.orm import sessionmaker #type: ignore
 from os import getenv
 from dotenv import load_dotenv #type: ignore
-load_dotenv()
+from app.settings import settings
 
-SQLALCHEMY_DATABASE_URL = getenv("SQLALCHEMY_DATABASE_URL")
+
+SQLALCHEMY_DATABASE_URL = settings.SQLALCHEMY_DATABASE_URL
 
 if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
     engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})

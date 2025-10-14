@@ -5,8 +5,8 @@ from pathlib import Path
 from app import config
 import io, os
 from datetime import datetime, timedelta
-from google.auth.transport import requests
-from google.auth import default, compute_engine
+from google.auth.transport import requests #type:ignore
+from google.auth import default, compute_engine #type: ignore
 
 # pip install google-cloud-storage
 from google.cloud import storage as gcs #type: ignore

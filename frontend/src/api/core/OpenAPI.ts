@@ -4,6 +4,9 @@
 /* eslint-disable */
 import type { ApiRequestOptions } from './ApiRequestOptions';
 
+const apiUrl = import.meta.env.VITE_API_BASE;
+// console.log(apiUrl)
+
 type Resolver<T> = (options: ApiRequestOptions) => Promise<T>;
 type Headers = Record<string, string>;
 
@@ -20,7 +23,7 @@ export type OpenAPIConfig = {
 };
 
 export const OpenAPI: OpenAPIConfig = {
-    BASE: 'https://alrs-backend-412832979617.asia-south1.run.app',
+    BASE: apiUrl,
     VERSION: '1.0.0',
     WITH_CREDENTIALS: true,
     CREDENTIALS: 'include',
