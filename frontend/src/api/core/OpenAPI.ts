@@ -26,7 +26,7 @@ export const OpenAPI: OpenAPIConfig = {
     BASE: apiUrl,
     VERSION: '1.0.0',
     WITH_CREDENTIALS: true,
-    CREDENTIALS: 'include',
+    CREDENTIALS: 'include', 
     TOKEN: undefined,
     USERNAME: undefined,
     PASSWORD: undefined,

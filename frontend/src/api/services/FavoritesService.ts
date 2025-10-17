@@ -96,4 +96,47 @@ export class FavoritesService {
             },
         });
     }
+    /**
+     * Get Favorites Limit
+     * @param galleryId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static getFavoritesLimitApiGalleriesGalleryIdFavoritesLimitGet(
+        galleryId: number,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/galleries/{gallery_id}/favorites/limit',
+            path: {
+                'gallery_id': galleryId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+
+    /**
+     * Export Favorites Csv
+     * Export favorites for a gallery as CSV (owner-only).
+     * CSV columns: photo_id, filename, order_index, is_cover, added_at (if available)
+     * @param galleryId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static exportFavoritesCsvApiGalleriesGalleriesGalleryIdFavoritesExportGet(
+        galleryId: string,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/galleries/galleries/{gallery_id}/favorites/export',
+            path: {
+                'gallery_id': galleryId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
 }

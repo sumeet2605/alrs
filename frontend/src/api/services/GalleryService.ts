@@ -5,6 +5,9 @@
 import type { Body_upload_photos_api_galleries__gallery_id__photos_post } from '../models/Body_upload_photos_api_galleries__gallery_id__photos_post';
 import type { GalleryCreate } from '../models/GalleryCreate';
 import type { CancelablePromise } from '../core/CancelablePromise';
+import type { NotifyPayload } from '../models/NotifyPayload';
+import type { SignedUrlRequest } from '../models/SignedUrlRequest';
+import type { ResumableRequest } from '../models/ResumableRequest';
 import { OpenAPI } from '../core/OpenAPI';
 import { request as __request } from '../core/request';
 import axios from 'axios';
@@ -61,6 +64,88 @@ export class GalleryService {
             },
         });
     }
+
+    /**
+     * Create Signed Upload Url
+     * Generates a V4 signed PUT URL for direct upload to GCS.
+     * Returns: { signed_url, object_name, gs_path }
+     * @param galleryId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static createSignedUploadUrlApiGalleriesGalleryIdSignedUploadPost(
+        galleryId: string,
+        requestBody: SignedUrlRequest,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/galleries/{gallery_id}/signed-upload',
+            path: {
+                'gallery_id': galleryId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Create Resumable Upload Session
+     * Returns: { upload_url, object_name, gs_path }
+     * `upload_url` is the resumable session URI to which the client will PUT chunks.
+     * The stored object name preserves original filename at the end inside a uuid folder.
+     * @param galleryId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static createResumableUploadSessionApiGalleriesGalleryIdResumableUploadPost(
+        galleryId: string,
+        requestBody: ResumableRequest,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/galleries/{gallery_id}/resumable-upload',
+            path: {
+                'gallery_id': galleryId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+
+
+    /**
+     * Notify Upload
+     * Client calls this after uploading the object to GCS to create DB record and schedule processing.
+     * @param galleryId
+     * @param requestBody
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static notifyUploadApiGalleriesGalleryIdPhotosNotifyUploadPost(
+        galleryId: string,
+        requestBody: NotifyPayload,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/galleries/{gallery_id}/photos/notify-upload',
+            path: {
+                'gallery_id': galleryId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+
     /**
      * Upload Photos
      * @param galleryId

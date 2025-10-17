@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback } from "react";
+// frontend/src/pages/PublicGalleryView.tsx
+import React, { useEffect, useState, useCallback, useMemo } from "react";
 import { useParams } from "react-router-dom";
 import {
   Typography,
@@ -11,21 +12,16 @@ import {
   Button,
   App,
   Tooltip,
+  Space,
 } from "antd";
 import { DownloadOutlined, HeartOutlined, HeartFilled } from "@ant-design/icons";
-// Assuming the root context for imports is one level above 'pages', or that
-// the API/utils are one more level up if 'pages' is itself nested.
-// We'll try going one level up for the components/utils that are likely 
-// siblings of 'pages' under 'src'. The original paths seem correct for 
-// a typical src/pages/ structure, but we'll try prepending one more `../` 
-// for the non-local paths to see if that resolves a potential misconfiguration.
 import { GalleryService } from "../api/services/GalleryService";
 import { OpenAPI } from "../api/core/OpenAPI";
 import GalleryHeader from "./ClientGalleryHeader";
 import SizePicker from "../components/SizePicker";
 import { FavoritesService } from "../api/services/FavoritesService"
 import { downloadGalleryZip } from "../utils/download";
-import { downloadSinglePhoto } from "../utils/downloadSinglePhoto"; // Using the redirect utility
+import { downloadSinglePhoto } from "../utils/downloadSinglePhoto";
 
 const { Title, Text } = Typography;
 
@@ -44,11 +40,9 @@ type Photo = {
 
 type DownloadSize = "original" | "large" | "medium" | "web";
 
-// Define SizeTarget to hold necessary info for download utility
 type SizeTarget =
   | { type: "gallery"; filenameHint: string }
   | { type: "photo"; photoId: string; filenameHint: string };
-
 
 const resolveUrl = (url?: string | null) => {
   if (!url) return null;
@@ -60,7 +54,7 @@ const resolveUrl = (url?: string | null) => {
 
 const PublicGalleryView: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
 
   const [gallery, setGallery] = useState<any>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -85,7 +79,14 @@ const PublicGalleryView: React.FC = () => {
   const [favoriteIds, setFavoriteIds] = useState<Set<string>>(new Set());
   const [favLimit, setFavLimit] = useState<number | null>(null);
 
-  // overlay CSS
+  // show favorites only toggle
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+
+   // download spinner state (gallery zip + single-photo)
+  const [downloading, setDownloading] = useState(false);
+  const [downloadingPhotoId, setDownloadingPhotoId] = useState<string | null>(null);
+
+  // overlay CSS (same as before)
   const overlayCSS = `
     .photo-tile-wrap {
       break-inside: avoid;
@@ -157,6 +158,14 @@ const PublicGalleryView: React.FC = () => {
     }
   }, [id]);
 
+  const remainingDownloads = useMemo(() => {
+    if (!gallery) return null;
+    const limit = gallery.download_limit;
+    const count = gallery.download_count ?? 0;
+    if (limit == null) return null; // unlimited
+    return Math.max(0, limit - count);
+  }, [gallery]);
+
   // load favorites from backend
   const loadFavorites = useCallback(async () => {
     if (!id) return;
@@ -178,15 +187,21 @@ const PublicGalleryView: React.FC = () => {
     if (!locked) loadFavorites();
   }, [locked, loadFavorites]);
 
-  // autoplay every 3s while preview is visible
+  // --- derive the set of photos currently displayed (full vs favorites-only)
+  // useMemo so it is safe to reference in other hooks and to avoid TDZ
+  const displayedPhotos = useMemo(() => {
+    return showFavoritesOnly ? photos.filter((p) => favoriteIds.has(p.id)) : photos;
+  }, [photos, favoriteIds, showFavoritesOnly]);
+
+  // autoplay every 3s while preview is visible and there are >1 displayed items
   useEffect(() => {
-    if (autoplay && previewVisible && photos.length > 1) {
+    if (autoplay && previewVisible && displayedPhotos.length > 1) {
       const timer = setInterval(() => {
-        setCurrentIndex((prev) => (prev + 1) % photos.length);
+        setCurrentIndex((prev) => (prev + 1) % displayedPhotos.length);
       }, 3000);
       return () => clearInterval(timer);
     }
-  }, [autoplay, previewVisible, photos.length]);
+  }, [autoplay, previewVisible, displayedPhotos.length]);
 
   const tryUnlock = async () => {
     if (!id) return;
@@ -200,10 +215,32 @@ const PublicGalleryView: React.FC = () => {
       await fetchAll();
       await loadFavorites();
     } catch (err: any) {
-      Modal.error({
-        title: "Unlock failed",
-        content: err?.response?.data?.detail ?? "Incorrect password",
-      });
+      const status = err?.response?.status ?? err?.status;
+      const detail = err?.response?.data?.detail ?? err?.message ?? "Incorrect password";
+      console.log(status)
+      // Special handling for expired password (server message contains 'expired')
+      if (status === 403) {
+        modal.error({
+          title: "Password has expired",
+          content: (
+            <div>
+              <p>{String(detail)}</p>
+              <p style={{ marginTop: 8 }}>
+                You can contact the photographer to request a new link or password.
+              </p>
+            </div>
+          ),
+        });
+        setPasswordModalOpen(false);
+        return;
+      }
+      else {
+        modal.error({
+          title: "Unlock failed",
+          content: err?.response?.data?.detail ?? "Incorrect password",
+        });
+        setPasswordModalOpen(false);
+      }
     }
   };
 
@@ -225,9 +262,20 @@ const PublicGalleryView: React.FC = () => {
         const next = new Set(favoriteIds);
         next.delete(photoId);
         setFavoriteIds(next);
+        // if we are in favorites-only view, removing should update displayedPhotos automatically
+        // if the currently previewed photo was removed, close preview or adjust index
+        if (showFavoritesOnly) {
+          // if there are no favorites left, close preview
+          if (displayedPhotos.length <= 1) {
+            setPreviewVisible(false);
+          } else {
+            // ensure currentIndex remains in-range (will refer to updated displayedPhotos)
+            setCurrentIndex((ci) => Math.min(ci, Math.max(0, displayedPhotos.length - 2)));
+          }
+        }
       } else {
         if (atLimit) {
-          Modal.warning({
+          modal.warning({
             title: "Favorites limit reached",
             content: `You can select up to ${favLimit} favorites.`,
           });
@@ -241,15 +289,24 @@ const PublicGalleryView: React.FC = () => {
     } catch (e: any) {
       const detail = e?.response?.data?.detail;
       if (e?.response?.status === 409 && detail) {
-        Modal.warning({ title: "Favorites limit", content: detail });
+        modal.warning({ title: "Favorites limit", content: detail });
       } else {
-        Modal.error({ title: "Favorite error", content: detail ?? "Operation failed" });
+        modal.error({ title: "Favorite error", content: detail ?? "Operation failed" });
       }
     }
   };
 
   // ---- Downloads ----
+  const canDownloadNow = () => {
+    if (!gallery) return true;
+    if (gallery.download_limit == null) return true;
+    return (gallery.download_count ?? 0) < gallery.download_limit;
+  };
   const openGalleryDownloadPicker = () => {
+    if (!canDownloadNow()) {
+      message.warning("Download limit reached for this gallery.");
+      return;
+    }
     const name =
       gallery?.booking?.client?.display_name ||
       gallery?.title ||
@@ -270,25 +327,30 @@ const PublicGalleryView: React.FC = () => {
 
   const handleSizeConfirm = async (size: DownloadSize) => {
     if (!id || !sizeTarget) return;
+    setSizeModalOpen(false);
     try {
       if (sizeTarget.type === "gallery") {
+        setDownloading(true);
         await downloadGalleryZip(id, sizeTarget.filenameHint, size);
       } else if (sizeTarget.type === "photo") {
+        setDownloadingPhotoId(sizeTarget.photoId);
         await downloadSinglePhoto(id, sizeTarget.photoId, sizeTarget.filenameHint, size);
       }
       message.success("Your download will start shortly.");
     } catch (e: any) {
-      Modal.error({
+      modal.error({
         title: "Download failed",
         content: e?.message ?? "Could not start download",
       });
     } finally {
-      setSizeModalOpen(false);
+      
       setSizeTarget(null);
+      setDownloading(false);
+      setDownloadingPhotoId(null);
     }
   };
 
-  // derived display
+  // derived display items
   const displayName =
     gallery?.booking?.client?.display_name || gallery?.title || "Gallery";
 
@@ -297,7 +359,11 @@ const PublicGalleryView: React.FC = () => {
   const displayDate = displayDateRaw
     ? new Date(displayDateRaw).toLocaleDateString()
     : "";
-
+  const expiryraw = gallery?.password_expires_at || null;
+  const e = expiryraw
+    ? new Date(expiryraw).toLocaleDateString()
+    : "";
+  
   const coverFromPhotos =
     photos.find((p) => p.is_cover)?.path_preview ||
     photos[0]?.path_preview ||
@@ -305,6 +371,23 @@ const PublicGalleryView: React.FC = () => {
     null;
 
   const coverUrl = gallery?.cover_photo_url || resolveUrl(coverFromPhotos) || null;
+
+  // --- handle click on a thumbnail: open preview for that index in displayedPhotos
+  const handleThumbClick = (idxInDisplayed: number) => {
+    setCurrentIndex(idxInDisplayed);
+    setPreviewVisible(true);
+  };
+
+  // Toggle favorites-only view (button placed next to header)
+  const toggleShowFavoritesOnly = () => {
+    setShowFavoritesOnly((s) => !s);
+    // close preview when toggling to favorites-only if none are favorites
+    if (!showFavoritesOnly && favoriteIds.size === 0) {
+      modal.info({ title: "No favorites", content: "You have no favorites yet." });
+    }
+    // reset currentIndex to 0 so preview (if opened) starts at first of filtered list
+    setCurrentIndex(0);
+  };
 
   if (loading) {
     return <Spin size="large" style={{ display: "block", margin: "4rem auto" }} />;
@@ -329,7 +412,7 @@ const PublicGalleryView: React.FC = () => {
           onOk={tryUnlock}
           okText="Unlock"
           onCancel={() => setPasswordModalOpen(false)}
-          destroyOnClose
+          destroyOnHidden
         >
           <Input.Password
             placeholder="Password"
@@ -351,11 +434,45 @@ const PublicGalleryView: React.FC = () => {
     );
   }
 
-  if (!photos.length) {
-    return <Empty description="No photos in this gallery" />;
+  if (!displayedPhotos.length) {
+    return (
+      <div style={{ padding: 32 }}>
+        <Space direction="vertical" style={{ width: "100%", alignItems: "center" }}>
+          <GalleryHeader
+            
+            clientName={displayName}
+            studioName="Alluring Lens Studio"
+            e={e}
+            onDownloadAll={openGalleryDownloadPicker}
+            onShare={copyShareLink}
+            onSlideshow={() => {
+              if (displayedPhotos.length > 0) {
+                setCurrentIndex(0);
+                setPreviewVisible(true);
+                setAutoplay(true);
+              }
+            }}
+          />
+          <div style={{ marginTop: 12 }}>
+            <Tooltip title={showFavoritesOnly ? "Show all photos" : "Show favorites only"}>
+              <Button
+                icon={showFavoritesOnly ? <HeartFilled style={{ color: "#ff4d4f" }} /> : <HeartOutlined />}
+                onClick={toggleShowFavoritesOnly}
+                type={showFavoritesOnly ? "primary" : "default"}
+              >
+                {showFavoritesOnly ? "Favorites" : "Favorites"}
+              </Button>
+            </Tooltip>
+          </div>
+
+          <Empty description={showFavoritesOnly ? "No favorites yet" : "No photos in this gallery"} />
+        </Space>
+      </div>
+    );
   }
 
   return (
+    <Spin spinning={downloading} tip="Preparing ZIP…" wrapperClassName="download-spinner">
     <div style={{ minHeight: "100vh", background: "#fff" }}>
       <style>{overlayCSS}</style>
 
@@ -398,7 +515,11 @@ const PublicGalleryView: React.FC = () => {
           </div>
         </div>
       )}
-
+      {remainingDownloads !== null && (
+        <div style={{ textAlign: "center", marginTop: 8, color: remainingDownloads === 0 ? "#ff4d4f" : "#666" }}>
+        Downloads remaining: {remainingDownloads} / {gallery.download_limit}
+        </div>
+      )}
       {/* Optional favorites counter under header */}
       {favLimit != null && (
         <div style={{ textAlign: "center", marginTop: 12, color: "#666" }}>
@@ -407,19 +528,24 @@ const PublicGalleryView: React.FC = () => {
       )}
 
       {/* Sticky header controls */}
-      <GalleryHeader
-        clientName={displayName}
+      
+        <GalleryHeader
+          clientName={displayName}
         studioName="Alluring Lens Studio"
-        onDownloadAll={openGalleryDownloadPicker}
-        onShare={copyShareLink}
-        onSlideshow={() => {
-          if (photos.length > 0) {
-            setCurrentIndex(0);
-            setPreviewVisible(true);
-            setAutoplay(true);
-          }
-        }}
-      />
+        e={e}
+          onToggleFavorites={toggleShowFavoritesOnly}
+          isFavoritesOnly={showFavoritesOnly}
+          favoriteCount={favoriteIds.size}
+          onDownloadAll={openGalleryDownloadPicker}
+          onShare={copyShareLink}
+          onSlideshow={() => {
+            if (displayedPhotos.length > 0) {
+              setCurrentIndex(0);
+              setPreviewVisible(true);
+              setAutoplay(true);
+            }
+          }}
+        />
 
       {/* PreviewGroup wraps the grid so slideshow works */}
       <Image.PreviewGroup
@@ -442,7 +568,7 @@ const PublicGalleryView: React.FC = () => {
             margin: "0 auto",
           }}
         >
-          {photos.map((p, index) => {
+          {displayedPhotos.map((p, index) => {
             const src =
               resolveUrl(p.path_preview ?? p.path_thumb ?? p.path_original) ??
               undefined;
@@ -460,7 +586,7 @@ const PublicGalleryView: React.FC = () => {
                     display: "block",
                   }}
                   preview={{ src: resolveUrl(p.path_original) ?? src }}
-                  onClick={() => setCurrentIndex(index)}
+                  onClick={() => handleThumbClick(index)}
                   placeholder
                 />
 
@@ -497,6 +623,7 @@ const PublicGalleryView: React.FC = () => {
                           e.stopPropagation();
                           openPhotoDownloadPicker(p);
                         }}
+                        loading={downloadingPhotoId === p.id}
                       />
                     </Tooltip>
                   </div>
@@ -516,7 +643,8 @@ const PublicGalleryView: React.FC = () => {
         }}
         onSelect={(size: DownloadSize) => handleSizeConfirm(size)}
       />
-    </div>
+      </div>
+      </Spin>
   );
 };
 

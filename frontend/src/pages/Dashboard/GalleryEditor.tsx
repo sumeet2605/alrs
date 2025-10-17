@@ -16,12 +16,18 @@ import {
   Input,
   Tooltip,
   InputNumber,
+  Checkbox,
+  message as antdMessage,
 } from "antd";
 import {
   ReloadOutlined,
   DownloadOutlined,
   PictureFilled,
   SettingOutlined,
+  DeleteOutlined,
+  SelectOutlined,
+  ClearOutlined,
+  FileExcelOutlined,
 } from "@ant-design/icons";
 import { GalleryService } from "../../api/services/GalleryService";
 import { OpenAPI } from "../../api/core/OpenAPI";
@@ -47,10 +53,16 @@ type DownloadPreset = "original" | "large" | "medium" | "web";
 
 export const GalleryEditor: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { message } = App.useApp();
+  const { message, modal } = App.useApp();
 
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(false);
+
+  // selection state for multi-delete
+  const [downloading, setDownloading] = useState(false);
+  const [downloadingPhotoId, setDownloadingPhotoId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [deletingSelected, setDeletingSelected] = useState(false);
 
   // password modal
   const [passwordModalVisible, setPasswordModalVisible] = useState(false);
@@ -66,7 +78,8 @@ export const GalleryEditor: React.FC = () => {
   const [sizeModalOpen, setSizeModalOpen] = useState(false);
   const [sizeTarget, setSizeTarget] = useState<
     { type: "photo" | "gallery"; photoId?: string; filenameHint?: string } | null
-  >(null);
+    >(null);
+  const [exportingFavorites, setExportingFavorites] = useState(false);
 
   /**
    * Resolve a possibly-relative storage path to a URL.
@@ -159,7 +172,10 @@ export const GalleryEditor: React.FC = () => {
     try {
       await GalleryService.deletePhotoApiGalleriesGalleryIdPhotosPhotoIdDelete(id, photoId);
       message.success("Photo deleted");
-      fetchPhotos();
+      // remove locally
+      setPhotos((p) => p.filter((x) => x.id !== photoId));
+      // also clear selection if present
+      setSelectedIds((s) => s.filter((x) => x !== photoId));
     } catch {
       message.error("Failed to delete photo");
     }
@@ -193,24 +209,125 @@ export const GalleryEditor: React.FC = () => {
 
   const handleSizeSelect = async (size: DownloadPreset) => {
     if (!id || !sizeTarget) return;
+    setSizeModalOpen(false);
     try {
       if (sizeTarget.type === "gallery") {
+        setDownloading(true);
         await downloadGalleryZip(id, sizeTarget.filenameHint, size);
       } else if (sizeTarget.type === "photo" && sizeTarget.photoId) {
+        setDownloadingPhotoId(sizeTarget.photoId);
         await downloadSinglePhoto(id, sizeTarget.photoId, sizeTarget.filenameHint, size);
       }
       message.success("Your download will start shortly.");
     } catch (err: any) {
       message.error(err?.message ?? "Download failed");
     } finally {
-      setSizeModalOpen(false);
+      
       setSizeTarget(null);
+      setDownloading(false);
+      setDownloadingPhotoId(null);
     }
   };
 
   if (!id) return <div>No gallery id</div>;
 
+  // --- Selection helpers for multi-delete ---
+  const toggleSelect = (photoId: string, checked: boolean) => {
+    setSelectedIds((prev) => {
+      if (checked) {
+        if (prev.includes(photoId)) return prev;
+        return [...prev, photoId];
+      } else {
+        return prev.filter((x) => x !== photoId);
+      }
+    });
+  };
+
+  const selectAll = () => {
+    setSelectedIds(photos.map((p) => p.id));
+  };
+
+  const clearSelection = () => {
+    setSelectedIds([]);
+  };
+
+  const deleteSelected = async () => {
+    if (!id) return;
+    if (selectedIds.length === 0) return;
+    setDeletingSelected(true);
+    try {
+      const ops = selectedIds.map((photoId) =>
+        GalleryService.deletePhotoApiGalleriesGalleryIdPhotosPhotoIdDelete(id, photoId)
+          .then(() => ({ id: photoId, ok: true }))
+          .catch((e: any) => ({ id: photoId, ok: false, error: e?.message ?? "error" }))
+      );
+      const results = await Promise.all(ops);
+      const succeeded = results.filter((r: any) => r.ok).map((r: any) => r.id);
+      const failed = results.filter((r: any) => !r.ok);
+
+      // remove succeeded locally
+      if (succeeded.length > 0) {
+        setPhotos((p) => p.filter((x) => !succeeded.includes(x.id)));
+        antdMessage.success(`Deleted ${succeeded.length} photo(s)`);
+      }
+
+      if (failed.length > 0) {
+        antdMessage.error(`${failed.length} photo(s) failed to delete`);
+        console.error("batch delete errors", failed);
+      }
+
+      // clear selection of removed photos
+      setSelectedIds((prev) => prev.filter((id) => !succeeded.includes(id)));
+    } catch (err: any) {
+      console.error("deleteSelected error", err);
+      antdMessage.error(err?.message ?? "Failed to delete selected photos");
+    } finally {
+      setDeletingSelected(false);
+    }
+  };
+
+  const exportFavoritesCsv = async () => {
+    if (!id) return;
+    setExportingFavorites(true);
+    try {
+      const token = OpenAPI.TOKEN;
+      if (!token || typeof token !== "string") {
+        throw new Error("Authentication token not available");
+      }
+      const apiurl = new URL(`${OpenAPI.BASE}/api/galleries/galleries/${id}/favorites/export`);
+      const resp = await fetch(apiurl, {
+          method: "GET",
+          headers: {
+            'Authorization': `Bearer ${token}`,
+          },
+      });
+      if (!resp.ok) {
+            const errorText = await resp.text();
+            modal.error({ title: "Export Failed", content: `Server error: ${resp.status} ${errorText}` });
+            return;
+        }
+      // resp is expected to be { filename: string, content: string (CSV) }
+      console.log("exportFavoritesCsv response", resp);
+      const blob = await resp.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `gallery-${id}-favorites.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+      message.success("Favorites CSV export started");
+    } catch (err: any) {
+      console.error("exportFavoritesCsv error", err);
+      message.error(err?.message ?? "Failed to export favorites CSV");
+    } finally {
+      setExportingFavorites(false);
+    }
+  };
+
   return (
+    <Spin spinning={downloading} tip="Preparing ZIP…">
     <div>
       {/* Top bar */}
       <div
@@ -262,7 +379,7 @@ export const GalleryEditor: React.FC = () => {
             Save Favorite Limit
           </Button>
 
-          <Button icon={<DownloadOutlined />} onClick={openGalleryDownload}>
+          <Button icon={<DownloadOutlined />} onClick={openGalleryDownload} loading={downloading}>
             Download ZIP
           </Button>
 
@@ -276,11 +393,55 @@ export const GalleryEditor: React.FC = () => {
             }}
           >
             Preview
+            </Button>
+            <Button
+              icon={<FileExcelOutlined />} // import this icon from @ant-design/icons
+              onClick={exportFavoritesCsv}
+              loading={exportingFavorites}
+            >
+              Export Favorites CSV
+            </Button>
+
+          {/* Multi-select actions */}
+          <Button icon={<SelectOutlined />} onClick={selectAll} disabled={photos.length === 0}>
+            Select all
           </Button>
+          <Button icon={<ClearOutlined />} onClick={clearSelection} disabled={selectedIds.length === 0}>
+            Clear
+          </Button>
+
+          <Popconfirm
+            title={`Delete ${selectedIds.length} selected photo(s)?`}
+            onConfirm={deleteSelected}
+            okText="Yes"
+            cancelText="No"
+            disabled={selectedIds.length === 0}
+          >
+            <Button icon={<DeleteOutlined />} danger loading={deletingSelected} disabled={selectedIds.length === 0}>
+              Delete selected
+            </Button>
+          </Popconfirm>
         </Space>
       </div>
 
-      <UploadDropzone galleryId={id!} onComplete={fetchPhotos} />
+      {/* UploadDropzone: insert created photo immediately via onComplete(photo) */}
+      <UploadDropzone
+        galleryId={id!}
+        onComplete={(photo?: any) => {
+          if (!photo) return;
+          // Some backends return { photos: [...] } or the created photo directly.
+          // Try to normalize: if array, insert all; if single object, insert that.
+          if (Array.isArray(photo)) {
+            const mapped = photo.map((p: any) => ({ ...p, id: String(p.id) }));
+            setPhotos((prev) => [...mapped, ...prev]);
+          } else if (photo && typeof photo === "object") {
+            setPhotos((prev) => [{ ...photo, id: String(photo.id) }, ...prev]);
+          } else {
+            // fallback: refetch
+            fetchPhotos();
+          }
+        }}
+      />
 
       <div style={{ marginTop: 18 }}>
         {loading ? (
@@ -294,6 +455,7 @@ export const GalleryEditor: React.FC = () => {
             {photos.map((p) => {
               const thumbUrl = resolveUrl(p.path_thumb ?? p.path_preview ?? p.path_original);
               const originalUrl = resolveUrl(p.path_original);
+              const checked = selectedIds.includes(p.id);
               return (
                 <Col key={p.id} xs={24} sm={12} md={8} lg={6} xl={4}>
                   <Card
@@ -330,7 +492,7 @@ export const GalleryEditor: React.FC = () => {
                         </Button>
                       </Tooltip>,
                       <Tooltip title="Download" key="download">
-                        <Button type="text" onClick={() => openPhotoDownload(p)}>
+                        <Button type="text" onClick={() => openPhotoDownload(p)} loading={downloadingPhotoId === p.id}>
                           <DownloadOutlined />
                         </Button>
                       </Tooltip>,
@@ -347,31 +509,36 @@ export const GalleryEditor: React.FC = () => {
                       </Popconfirm>,
                     ]}
                   >
-                    <Card.Meta
-                      title={p.filename}
-                      description={
-                        <div
-                          style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                          }}
-                        >
-                          <div style={{ fontSize: 12, color: p.is_cover ? "#389e0d" : "#666" }}>
-                            {p.is_cover ? "Cover" : ""}
-                          </div>
-                          <div>
-                            <Button
-                              type="link"
-                              size="small"
-                              onClick={() => originalUrl && window.open(originalUrl, "_blank")}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <Checkbox checked={checked} onChange={(e) => toggleSelect(p.id, e.target.checked)} />
+                        <Card.Meta
+                          title={p.filename}
+                          description={
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                              }}
                             >
-                              Open
-                            </Button>
-                          </div>
-                        </div>
-                      }
-                    />
+                              <div style={{ fontSize: 12, color: p.is_cover ? "#389e0d" : "#666" }}>
+                                {p.is_cover ? "Cover" : ""}
+                              </div>
+                              <div>
+                                <Button
+                                  type="link"
+                                  size="small"
+                                  onClick={() => originalUrl && window.open(originalUrl, "_blank")}
+                                >
+                                  Open
+                                </Button>
+                              </div>
+                            </div>
+                          }
+                        />
+                      </div>
+                    </div>
                   </Card>
                 </Col>
               );
@@ -407,6 +574,7 @@ export const GalleryEditor: React.FC = () => {
         onSelect={(size) => handleSizeSelect(size as DownloadPreset)}
       />
     </div>
+    </Spin>
   );
 };
 
