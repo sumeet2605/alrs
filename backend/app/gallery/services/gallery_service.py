@@ -2,22 +2,29 @@
 from sqlalchemy.orm import Session  #type: ignore
 from typing import List, Optional, Dict, Any
 from app.gallery.models import gallery_model as models 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 import uuid
 from app.auth.utils.password_hasher import get_password_hash, verify_password as verify_plain_password
 from pathlib import Path
 from app import config, images
 from app.gallery.utils.urls import url_from_path
 
-def set_gallery_password(db:Session, gallery_id:str, owner_id:str, password: Optional[str]) -> models.Gallery:
+def set_gallery_password(db:Session, gallery_id:str, owner_id:str, password: Optional[str], expires_seconds: Optional[int], expires_at: Optional[datetime]) -> models.Gallery:
     gallery = db.query(models.Gallery).filter(models.Gallery.id == gallery_id, models.Gallery.owner_id == owner_id).first()
     if not gallery:
         raise ValueError("Gallery not found or not owned by user")
     if password:
         gallery.password_hash = get_password_hash(password)
         gallery.is_public = True
+        if expires_at:
+            gallery.password_expires_at = expires_at.astimezone(timezone.utc)
+        elif expires_seconds:
+            gallery.password_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_seconds))
+        else:
+            gallery.password_expires_at = None
     else:
         gallery.password_hash = None
+        gallery.password_expires_at = None
     db.add(gallery)
     db.commit()
     db.refresh(gallery)
@@ -29,7 +36,7 @@ def verify_gallery_password(db: Session, gallery_id: str, password: str) -> bool
     if not gallery:
         return False
     if not gallery.password_hash:
-        return True  # no password required
+        return False  # no password required
     return verify_plain_password(password, gallery.password_hash)
 
 def create_gallery(db: Session, owner_id: str, title: str, description: Optional[str] = None, is_public: bool = False):

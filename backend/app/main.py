@@ -23,7 +23,7 @@ load_dotenv()
 
 # The 'lifespan=lifespan' parameter is the critical fix.
 app = FastAPI(title="Alluring Lens Studios API", version="1.0.0", debug=settings.DEBUG)
-print(config.FRONTEND_ORIGINS)
+# print(config.FRONTEND_ORIGINS)
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -33,7 +33,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-print(settings.DEBUG)
+# print(settings.DEBUG)
 @app.get("/config")
 def read_config():
     return {

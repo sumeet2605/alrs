@@ -1,6 +1,6 @@
 import os
 from pydantic_settings import BaseSettings
-from pydantic import AnyUrl, field_validator
+from pydantic import AnyUrl, field_validator, model_validator
 
 class Settings(BaseSettings):
     # core
@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     GCS_CREDENTIALS_JSON: str | None = None
     GCP_PROJECT_ID: str | None = None
 
+    SECURE: bool = False  # use secure cookies
+    SAMESITE: str = "lax"  # cookie samesite policy
+
     @field_validator("ENV")
     @classmethod
     def env_allowed(cls, v: str) -> str:
@@ -34,6 +37,27 @@ class Settings(BaseSettings):
             raise ValueError("ENV must be one of development|production|staging|test")
         return v
 
+    # ----------------------------------------------------
+    # NEW VALIDATOR FOR COOKIE ATTRIBUTES
+    # ----------------------------------------------------
+    @model_validator(mode='after')
+    def set_cookie_attributes(self) -> 'Settings':
+        """Sets SECURE and SAMESITE based on the environment."""
+        
+        # Production/Staging require Secure=True and SameSite=None 
+        # for cross-site cookie transmission (API separate from client)
+        if self.ENV in {"production", "staging"}:
+            self.SECURE = True
+            # Use None for cross-site production, must be capitalized
+            self.SAMESITE = "None" 
+        else:
+            # Development/Test environments use Lax (works with proxy) 
+            # and Secure=False (required for local HTTP)
+            self.SECURE = False
+            self.SAMESITE = "Lax"
+
+        return self
+    # ----------------------------------------------------
     class Config:
         # pick env file based on ENV exported in the OS
         env_file = ".env.production" if os.getenv("ENV") == "production" else ".env.development"

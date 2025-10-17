@@ -153,4 +153,16 @@ class GCSStorage(Storage):
         Generate a V4 signed URL suitable for uploading a file with PUT.
         Returns a URL that accepts a PUT with `Content-Type` = content_type.
         """
+        if settings.ENV.lower() == "production":
+            credentials, _ = default()
+    
+        # then within your abstraction
+            auth_request = requests.Request()
+            credentials.refresh(auth_request)
+        
+            signing_credentials = compute_engine.IDTokenCredentials(
+                auth_request,
+                "",
+                service_account_email=credentials.service_account_email
+            )
         return self.generate_signed_url(key, expires=expires, content_type=content_type, method="PUT")

@@ -1,8 +1,19 @@
-   [
-      {
-        "origin": ["http://localhost:5173","http://localhost:8000","http://127.0.0.1:8000",  "http://alluringlensstudios.com", "https://alluringlensstudios.com"],
-        "method": ["GET", "PUT", "POST", "DELETE", "HEAD"],
-        "responseHeader": ["Content-Type", "Content-Disposition", "X-Requested-With"],
-        "maxAgeSeconds": 3600
-      }
-    ]
+[
+  {
+    "origin": ["https://galleries.alluringlensstudios.com","https://alrs-backend-412832979617.asia-south1.run.app", "http://alluringlensstudios.com", "https://alluringlensstudios.com"],
+    "method": ["GET", "HEAD", "PUT", "POST", "DELETE", "OPTIONS"],
+    "responseHeader": [
+      "Content-Type",
+      "Range",
+      "Content-Length",
+      "ETag",
+      "x-goog-resumable",
+      "x-goog-upload-protocol",
+      "x-goog-upload-command",
+      "x-goog-upload-header-content-length",
+      "x-goog-upload-offset",
+      "x-goog-generation"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

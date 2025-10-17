@@ -23,6 +23,9 @@ from app.gallery.utils.image_pipline import process_image_pipeline
 from app.gallery.utils.urls import url_from_path
 from app.gallery.utils.zip_gcs import signed_zip_url, ensure_zip_in_gcs, zip_key
 from app.settings import settings
+from datetime import datetime, timezone
+from dateutil import parser as dateutil_parser
+from app.gallery.utils.download_quota import check_and_reserve_download
 
 
 router = APIRouter(tags=["Gallery"])
@@ -199,9 +202,18 @@ def set_gallery_password_endpoint(gallery_id: str, payload: dict, db: Session = 
     payload: { "password": "..." }  or { "password": null } to remove
     """
     password = payload.get("password") if isinstance(payload, dict) else None
+    expires_seconds = payload.get("expires_seconds")
+    expires_at = payload.get("expires_at")
+    expires_dt = None
+    if isinstance(expires_at, str):
+        try:
+            expires_dt = dateutil_parser.isoparse(expires_at)
+        except Exception:
+            raise HTTPException(status_code=400, detail="Invalid expires_at format")
     try:
-        gallery = crud.set_gallery_password(db, gallery_id=str(gallery_id), owner_id=str(user.id), password=password)
-        return {"ok": True, "gallery_id": str(gallery.id), "protected": bool(gallery.password_hash)}
+        gallery = crud.set_gallery_password(db, gallery_id=str(gallery_id), owner_id=str(user.id), password=password,
+                                            expires_seconds=expires_seconds, expires_at=expires_dt)
+        return {"ok": True, "gallery_id": str(gallery.id), "protected": bool(gallery.password_hash), "password_expires_at": gallery.password_expires_at}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     
@@ -220,15 +232,32 @@ def unlock_gallery_endpoint(gallery_id: str, body: dict, response: Response, db:
     ok = crud.verify_gallery_password(db, gallery_id=str(gallery_id), password=password)
     if not ok:
         raise HTTPException(status_code=403, detail="Invalid password")
-
+    gallery = crud.get_gallery(db, gallery_id)
+    # If gallery has expiry and it's in the past, deny
+    if getattr(gallery, "password_expires_at", None):
+        if datetime.now(timezone.utc) > gallery.password_expires_at.replace(tzinfo=timezone.utc):
+            raise HTTPException(status_code=403, detail="Password has expired")
+    
+    # compute cookie max_age: default token TTL (e.g. 1 hour) or until gallery expiry
+    default_ttl = getattr(config, "GALLERY_ACCESS_TOKEN_TTL", 60*60)  # seconds
+    if getattr(gallery, "password_expires_at", None):
+        seconds_until_gallery_expiry = int((gallery.password_expires_at.replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)).total_seconds())
+        if seconds_until_gallery_expiry <= 0:
+            raise HTTPException(status_code=403, detail="Password has expired")
+        cookie_ttl = min(default_ttl, seconds_until_gallery_expiry)
+    else:
+        cookie_ttl = default_ttl
     # create signed short-lived token and set cookie
-    token = create_gallery_access_token(str(gallery_id))
+    token = create_gallery_access_token(str(gallery_id), expires_minutes=int(cookie_ttl/60))
     cookie_name = f"gallery_access_{gallery_id}"
-    response.set_cookie(cookie_name, token, httponly=True, max_age=60*60, samesite="lax", path="/")
+    # print(token)
+    # print(cookie_ttl)
+    response.set_cookie(cookie_name, token, httponly=True, max_age=cookie_ttl, samesite=settings.SAMESITE, secure=settings.SECURE, path="/")
     return {"ok": True}
 
 @router.get("/galleries/{gallery_id}/photos")
 def list_photos(gallery_id: str,request: Request, db: Session = Depends(get_db), user=Depends(get_optional_current_user)):
+    # print(request.headers)
     gallery = crud.get_gallery(db, gallery_id)
     if not gallery:
         raise HTTPException(status_code=404, detail="Gallery not found")
@@ -236,7 +265,9 @@ def list_photos(gallery_id: str,request: Request, db: Session = Depends(get_db),
     if user:
         allowed = True
     else:
+        # print(request.cookies)
         token = request.cookies.get(f"gallery_access_{gallery_id}")
+        # print(token)
         if token and verify_gallery_access_token(token, gallery_id):
             allowed = True
     
@@ -321,7 +352,7 @@ def set_photo_as_cover(
     gallery = db.query(Gallery).filter(Gallery.id == gallery_id).first()
     if not gallery:
         raise HTTPException(status_code=404, detail="Gallery not found")
-    if gallery.owner_id != user.id:
+    if not user.id:
         raise HTTPException(status_code=403, detail="Not allowed")
 
     # find the photo
@@ -344,25 +375,6 @@ def set_photo_as_cover(
     return {"detail": "Cover set", "photo_id": photo.id}
 
 
-@router.post("/galleries/{gallery_id}/unlock")
-def unlock_gallery(gallery_id: str, payload: dict, response: Response, db: Session = Depends(get_db)):
-    password = payload.get("password")
-    if password is None:
-        raise HTTPException(status_code=400, detail="Password required")
-    if not crud.verify_gallery_password(db, gallery_id, password):
-        raise HTTPException(status_code=401, detail="Invalid password")
-    token = create_gallery_access_token(gallery_id=gallery_id)
-    max_age = 60 * 60 * 24
-    response.set_cookie(
-        key=f"gallery_access_{gallery_id}",
-        value = token,
-        httponly=True,
-        max_age = max_age,
-        path="/",
-        samesite="lax"
-    )
-    return {"ok": True}
-
 @router.get("/galleries/{gallery_id}/download")
 def download_gallery_route(
     gallery_id: str,
@@ -375,8 +387,14 @@ def download_gallery_route(
 ):
     # permission
     check_gallery_access(db, gallery_id, request, current_user)
+    
+    try:
+        check_and_reserve_download(db, gallery_id, reserve=1, actor=current_user)  # reserve 1
+    except HTTPException as e:
+        # bubble up 429
+        raise e
     filename = f"gallery-{gallery_id}-{size}.zip"
-    print("Ziiping")
+    # print("Ziiping")
     key = ensure_zip_in_gcs(db, gallery_id, size)
     if linkOnly:
         url = storage.signed_url(key, expires_seconds=600, response_disposition=None)

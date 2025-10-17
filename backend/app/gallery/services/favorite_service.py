@@ -50,3 +50,4 @@ def set_gallery_favorites_limit(db: Session, gallery: Gallery, limit: int | None
     db.commit()
     db.refresh(gallery)
     return gallery
+

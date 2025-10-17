@@ -34,7 +34,7 @@ def create_new_user(user_data: UserRegistration, db: Session) -> User:
 
     # If no conflicts, create the user
     hashed_password = get_password_hash(user_data.password)
-    print(user_data.role)
+    # print(user_data.role)
     role = db.query(Role).filter(Role.id == user_data.role).first()
     
     new_user = User(

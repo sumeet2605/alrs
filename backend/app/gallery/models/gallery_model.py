@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, Text #type: ignore
+from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, Text, DateTime #type: ignore
 from sqlalchemy.sql import func #type: ignore
 from sqlalchemy import ForeignKey #type: ignore
 from sqlalchemy.orm import relationship #type: ignore
@@ -18,6 +18,10 @@ class Gallery(Base):
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     updated_at = Column(TIMESTAMP(timezone=True), onupdate=func.now())
     password_hash = Column(String(256), nullable=True)
+    password_expires_at = Column(DateTime(timezone=True), nullable=True)
+    download_count = Column(Integer, nullable=True)
+    download_limit = Column(Integer, default=5)
+    resets_at = Column(DateTime(timezone=True), nullable=True)
     favorites_limit = Column(Integer, nullable=True)
 
     owner = relationship("User", back_populates="galleries")
@@ -27,7 +31,7 @@ class Gallery(Base):
 class Photo(Base):
     __tablename__ = "photos"
     id = Column(Integer, primary_key=True, index=True)
-    file_id = Column(String(36), unique=True, nullable=False, default=gen_uuid_str)  # NEW column
+    file_id = Column(String(36), unique=True, nullable=True, default=gen_uuid_str)  # NEW column
     gallery_id = Column(Integer, ForeignKey("galleries.id", ondelete="CASCADE"), index=True, nullable=False)
     filename = Column(String(512), nullable=False)
     ext = Column(String(10), nullable=False)

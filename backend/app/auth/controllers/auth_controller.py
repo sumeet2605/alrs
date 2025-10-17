@@ -18,6 +18,7 @@ from app.auth.models.refresh_token_model import RefreshToken
 from datetime import datetime
 from app.auth.services.user_service import get_user_by_username
 from app.rate_limiter import limiter
+from app.settings import settings
 
 router = APIRouter(tags=["authentication"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/login")
@@ -49,8 +50,8 @@ def user_login(
         token.refresh_token,
         max_age=REFRESH_COOKIE_MAX_AGE,
         httponly=True,
-        secure=False,  # For local development
-        samesite="lax"  # For local development
+        secure=settings.SECURE,  # For local development
+        samesite=settings.SAMESITE  # For local development
     )
     return {"access_token": token.access_token, "token_type": "bearer"}
 
@@ -99,9 +100,9 @@ def refresh_token(
         new_refresh_encoded,
         max_age=REFRESH_COOKIE_MAX_AGE,
         httponly=True,
-        secure=True,  # For local development
-        samesite=None,
-        domain=".alluringlensstudios.com",
+        secure=settings.SECURE,  # For local development
+        samesite=settings.SAMESITE,
+        domain=".alluringlensstudios.com" if getenv("ENV") == "production" else None,  # For production
         path="/api"  # For local development
     )
     db.add(rt)

@@ -3,10 +3,11 @@ from datetime import datetime, timedelta
 from jose import jwt # type: ignore
 from app import config
 from os import getenv
+from app.settings import settings
 
 GALLERY_TOKEN_ALG = "HS256"
 GALLERY_TOKEN_EXP_MIN = 60  # minutes
-SECRET_KEY = getenv("SECRET_KEY")
+SECRET_KEY = settings.SECRET_KEY
 
 def create_gallery_access_token(gallery_id: str, expires_minutes: int = GALLERY_TOKEN_EXP_MIN) -> str:
     now = datetime.now()

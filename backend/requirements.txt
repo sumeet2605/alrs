@@ -18,3 +18,5 @@ psycopg2-binary
 google-cloud-storage
 google-cloud-secret-manager
 google-auth
+pydantic-settings
+python-dateutil

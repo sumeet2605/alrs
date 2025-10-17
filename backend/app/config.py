@@ -23,7 +23,7 @@ else:
 
 STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "local")
 
-print(f"DEBUG: Installed google-cloud-storage version: {google.cloud.storage.__version__}")
+# print(f"DEBUG: Installed google-cloud-storage version: {google.cloud.storage.__version__}")
 
 # For GCS
 GCS_BUCKET_NAME = settings.GCS_BUCKET_NAME
