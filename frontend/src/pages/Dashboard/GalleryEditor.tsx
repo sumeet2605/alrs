@@ -31,10 +31,12 @@ import {
 } from "@ant-design/icons";
 import { GalleryService } from "../../api/services/GalleryService";
 import { OpenAPI } from "../../api/core/OpenAPI";
+import axios from "axios";
 import { downloadGalleryZip } from "../../utils/download";
 import { downloadSinglePhoto } from "../../utils/downloadSinglePhoto";
 import SizePicker from "../../components/SizePicker";
 import { FavoritesService } from "../../api/services/FavoritesService";
+import useInfiniteScroll from "../../hooks/useInfiniteScroll";
 
 type Photo = {
   id: string;
@@ -57,6 +59,10 @@ export const GalleryEditor: React.FC = () => {
 
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState<number>(1);
+  const [perPage] = useState<number>(10);
+  const [hasMore, setHasMore] = useState<boolean>(false);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
 
   // selection state for multi-delete
   const [downloading, setDownloading] = useState(false);
@@ -94,21 +100,29 @@ export const GalleryEditor: React.FC = () => {
     return `${base}${path}`;
   }, []);
 
-  const fetchPhotos = useCallback(async () => {
+  const fetchPhotosPage = useCallback(async (p: number = 1) => {
     if (!id) return;
-    setLoading(true);
+    if (p === 1) setLoading(true);
+    else setLoadingMore(true);
     try {
-      const resp = await GalleryService.listPhotosApiGalleriesGalleryIdPhotosGet(id);
-      let list: Photo[] = [];
-      if (!resp) list = [];
-      else if (Array.isArray(resp)) list = resp as Photo[];
-      else if (Array.isArray((resp as any).photos)) list = (resp as any).photos as Photo[];
-      else if (Array.isArray((resp as any).data)) list = (resp as any).data as Photo[];
-      else if (Array.isArray((resp as any).items)) list = (resp as any).items as Photo[];
-      else list = (resp as any) as Photo[];
+      const url = `${(OpenAPI.BASE ?? "").replace(/\/$/, "")}/api/galleries/${encodeURIComponent(
+        id
+      )}/photos`;
+      const headers: Record<string, string> = {};
 
-      list = list.map((p: any) => ({ ...p, id: String(p.id) }));
-      setPhotos(list);
+      if (OpenAPI.TOKEN) {
+        headers["Authorization"] = `Bearer ${OpenAPI.TOKEN}`;
+      }
+      const resp = await axios.get(url, { params: { page: p, per_page: perPage }, withCredentials: true, headers: headers });
+      const data = resp.data;
+      const list = Array.isArray(data)
+        ? data
+        : data?.photos ?? data?.items ?? data?.data ?? [];
+      const mapped = (list || []).map((ph: any) => ({ ...ph, id: String(ph.id) }));
+      if (p === 1) setPhotos(mapped);
+      else setPhotos((prev) => [...prev, ...mapped]);
+  setHasMore(Boolean(data?.has_more ?? (mapped.length === perPage && (data?.total == null || (p * perPage) < data.total))));
+      setPage(p);
     } catch (err: any) {
       const status = err?.response?.status ?? err?.status;
       if (status === 401 || status === 403) {
@@ -118,14 +132,28 @@ export const GalleryEditor: React.FC = () => {
         message.error("Failed to load photos");
       }
     } finally {
-      setLoading(false);
+      if (p === 1) setLoading(false);
+      else setLoadingMore(false);
     }
-  }, [id, message]);
+  }, [id, message, perPage]);
+
+  const loadMore = useCallback(() => {
+    if (!hasMore || loadingMore) return;
+    fetchPhotosPage(page + 1);
+  }, [hasMore, loadingMore, page, fetchPhotosPage]);
+
+  const sentinelRef = useInfiniteScroll({
+    loading: loadingMore,
+    hasMore,
+    onLoadMore: loadMore,
+    root: null,
+    rootMargin: "300px",
+  });
 
   // load photos
   useEffect(() => {
-    fetchPhotos();
-  }, [fetchPhotos]);
+    fetchPhotosPage(1);
+  }, [fetchPhotosPage]);
 
   // load favorite limit
   useEffect(() => {
@@ -159,7 +187,7 @@ export const GalleryEditor: React.FC = () => {
       setPasswordModalVisible(false);
       setPasswordValue("");
       message.success("Unlocked gallery. Loading photos...");
-      await fetchPhotos();
+  await fetchPhotosPage(1);
     } catch (err: any) {
       message.error(err?.response?.data?.detail ?? "Invalid password");
     } finally {
@@ -186,7 +214,7 @@ export const GalleryEditor: React.FC = () => {
     try {
       await GalleryService.setPhotoAsCoverApiGalleriesGalleryIdPhotosPhotoIdCoverPost(id, photoId);
       message.success("Cover set");
-      fetchPhotos();
+  fetchPhotosPage(1);
     } catch {
       message.error("Failed to set cover");
     }
@@ -346,7 +374,7 @@ export const GalleryEditor: React.FC = () => {
         </div>
 
         <Space wrap>
-          <Button icon={<ReloadOutlined />} onClick={fetchPhotos}>
+          <Button icon={<ReloadOutlined />} onClick={() => fetchPhotosPage(1)}>
             Refresh
           </Button>
 
@@ -438,7 +466,7 @@ export const GalleryEditor: React.FC = () => {
             setPhotos((prev) => [{ ...photo, id: String(photo.id) }, ...prev]);
           } else {
             // fallback: refetch
-            fetchPhotos();
+        fetchPhotosPage(1);
           }
         }}
       />
@@ -451,6 +479,7 @@ export const GalleryEditor: React.FC = () => {
         ) : photos.length === 0 ? (
           <Empty description="No photos in this gallery" />
         ) : (
+          <>
           <Row gutter={[16, 16]}>
             {photos.map((p) => {
               const thumbUrl = resolveUrl(p.path_thumb ?? p.path_preview ?? p.path_original);
@@ -544,6 +573,13 @@ export const GalleryEditor: React.FC = () => {
               );
             })}
           </Row>
+          {hasMore && (
+            <div style={{ textAlign: "center", marginTop: 16, width: "100%" }}>
+              <div ref={sentinelRef} aria-hidden="true" />
+              {loadingMore && <Spin style={{ marginTop: 8 }} />}
+            </div>
+          )}
+          </>
         )}
       </div>
 

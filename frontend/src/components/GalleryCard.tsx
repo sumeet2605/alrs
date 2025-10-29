@@ -4,7 +4,8 @@ import { Card, Tooltip, App, Button, Modal, Input, Checkbox, Space, Select, Date
 import Meta from "antd/es/card/Meta";
 import { Link } from "react-router-dom";
 import { OpenAPI } from "../api/core/OpenAPI";
-import { ShareAltOutlined, LinkOutlined } from '@ant-design/icons';
+// 🛑 IMPORT DeleteOutlined 🛑
+import { ShareAltOutlined, LinkOutlined, DeleteOutlined } from '@ant-design/icons';
 import { GalleryService } from "../api/services/GalleryService";
 import axios from "axios";
 import dayjs from "dayjs";
@@ -32,7 +33,9 @@ export const GalleryCard: React.FC<Props> = ({ id, title, coverUrl, description,
   const [password, setPassword] = useState<string>("");
   const [makePublicChecked, setMakePublicChecked] = useState(true);
   const [loading, setLoading] = useState(false);
-  const { message } = App.useApp();
+  // 🛑 ADD State for delete loading 🛑
+  const [deleting, setDeleting] = useState(false);
+  const { message, modal } = App.useApp(); // 🛑 Destructure 'modal' here 🛑
 
   // expiry state
   const [expiry, setExpiry] = useState<string>("never");
@@ -143,6 +146,33 @@ export const GalleryCard: React.FC<Props> = ({ id, title, coverUrl, description,
       setLoading(false);
     }
   };
+  
+  // 🛑 NEW FUNCTION: Handle Gallery Deletion 🛑
+  const handleDeleteGallery = async () => {
+    modal.confirm({
+      title: 'Confirm Deletion',
+      content: `Are you sure you want to delete the gallery "${title}"? This action cannot be undone and all associated photos will be removed.`,
+      okText: 'Delete',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        setDeleting(true);
+        try {
+          // Use the provided API call
+          await GalleryService.deleteGalleryApiGalleriesGalleryIdDelete(id);
+          message.success(`Gallery "${title}" deleted successfully.`);
+          onUpdated?.(); // Notify parent component to refresh the list
+        } catch (err: any) {
+          console.error("Delete failed", err);
+          message.error(err?.response?.data?.detail ?? "Failed to delete gallery.");
+        } finally {
+          setDeleting(false);
+        }
+      },
+      // Do nothing on cancel
+    });
+  };
+  // 🛑 END NEW FUNCTION 🛑
 
   return (
     <>
@@ -176,6 +206,17 @@ export const GalleryCard: React.FC<Props> = ({ id, title, coverUrl, description,
           </Tooltip>,
           <Tooltip key="share" title={isPublic ? "Copy share link" : "Make public / share"}>
             <Button type="link" onClick={onShareClicked} icon={<ShareAltOutlined />} />
+          </Tooltip>,
+          // 🛑 NEW ACTION: Delete Button 🛑
+          <Tooltip key="delete" title="Delete Gallery">
+            <Button 
+              type="link" 
+              danger 
+              onClick={handleDeleteGallery} 
+              icon={<DeleteOutlined />} 
+              loading={deleting}
+              disabled={deleting} // Disable to prevent multiple clicks
+            />
           </Tooltip>
         ]}
       >

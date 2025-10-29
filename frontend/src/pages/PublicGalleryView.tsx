@@ -16,12 +16,14 @@ import {
 } from "antd";
 import { DownloadOutlined, HeartOutlined, HeartFilled } from "@ant-design/icons";
 import { GalleryService } from "../api/services/GalleryService";
+import axios from "axios";
 import { OpenAPI } from "../api/core/OpenAPI";
 import GalleryHeader from "./ClientGalleryHeader";
 import SizePicker from "../components/SizePicker";
 import { FavoritesService } from "../api/services/FavoritesService"
 import { downloadGalleryZip } from "../utils/download";
 import { downloadSinglePhoto } from "../utils/downloadSinglePhoto";
+import useInfiniteScroll from "../hooks/useInfiniteScroll";
 
 const { Title, Text } = Typography;
 
@@ -58,6 +60,11 @@ const PublicGalleryView: React.FC = () => {
 
   const [gallery, setGallery] = useState<any>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
+  const [page, setPage] = useState<number>(1);
+  const [perPage] = useState<number>(20);
+  // total is intentionally unused; keep pagination derived from has_more or page sizes
+  const [hasMore, setHasMore] = useState<boolean>(false);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -116,9 +123,10 @@ const PublicGalleryView: React.FC = () => {
     }
   `;
 
-  const fetchAll = useCallback(async () => {
+  const fetchPage = useCallback(async (p: number = 1) => {
     if (!id) return;
-    setLoading(true);
+    if (p === 1) setLoading(true);
+    else setLoadingMore(true);
     setError(null);
     try {
       // Optional gallery metadata
@@ -131,15 +139,25 @@ const PublicGalleryView: React.FC = () => {
       } catch { /* ignore */ }
 
       // Photos (401 => locked)
-      const resp = await GalleryService.listPhotosApiGalleriesGalleryIdPhotosGet(id);
-      const list = Array.isArray(resp)
-        ? resp
-        : (resp as any)?.photos ?? (resp as any)?.data ?? [];
-      const normalized: Photo[] = (list || []).map((p: any) => ({
-        ...p,
-        id: String(p.id),
-      }));
-      setPhotos(normalized);
+      const url = `${(OpenAPI.BASE ?? "").replace(/\/$/, "")}/api/galleries/${encodeURIComponent(
+        id
+      )}/photos`;
+      const headers: Record<string, string> = {};
+            if (OpenAPI.TOKEN) {
+              headers["Authorization"] = `Bearer ${OpenAPI.TOKEN}`;
+            }
+            const resp = await axios.get(url, { params: { page: p, per_page: perPage }, withCredentials: true, headers: headers });
+      const data = resp.data;
+      // normalize response shape
+      const list = Array.isArray(data)
+        ? data
+        : data?.photos ?? data?.items ?? data?.data ?? [];
+      const normalized: Photo[] = (list || []).map((ph: any) => ({ ...ph, id: String(ph.id) }));
+      if (p === 1) setPhotos(normalized);
+      else setPhotos((prev) => [...prev, ...normalized]);
+  // pagination metadata
+  setHasMore(Boolean(data?.has_more ?? (normalized.length === perPage && (data?.total == null || (p * perPage) < data.total))));
+      setPage(p);
       setLocked(false);
     } catch (err: any) {
       const status = err?.response?.status ?? err?.status;
@@ -154,9 +172,23 @@ const PublicGalleryView: React.FC = () => {
         setError("Failed to load gallery.");
       }
     } finally {
-      setLoading(false);
+      if (p === 1) setLoading(false);
+      else setLoadingMore(false);
     }
-  }, [id]);
+  }, [id, perPage]);
+
+  const loadMore = useCallback(() => {
+    if (!hasMore || loadingMore) return;
+    fetchPage(page + 1);
+  }, [hasMore, loadingMore, page, fetchPage]);
+
+  const sentinelRef = useInfiniteScroll({
+    loading: loadingMore,
+    hasMore,
+    onLoadMore: loadMore,
+    root: null,
+    rootMargin: "300px",
+  });
 
   const remainingDownloads = useMemo(() => {
     if (!gallery) return null;
@@ -180,8 +212,8 @@ const PublicGalleryView: React.FC = () => {
   }, [id]);
 
   useEffect(() => {
-    fetchAll();
-  }, [fetchAll]);
+    fetchPage(1);
+  }, [fetchPage]);
 
   useEffect(() => {
     if (!locked) loadFavorites();
@@ -212,7 +244,7 @@ const PublicGalleryView: React.FC = () => {
       setPasswordModalOpen(false);
       setPasswordValue("");
       message.success("Gallery unlocked");
-      await fetchAll();
+  await fetchPage(1);
       await loadFavorites();
     } catch (err: any) {
       const status = err?.response?.status ?? err?.status;
@@ -332,6 +364,7 @@ const PublicGalleryView: React.FC = () => {
       if (sizeTarget.type === "gallery") {
         setDownloading(true);
         await downloadGalleryZip(id, sizeTarget.filenameHint, size);
+        setDownloading(false);
       } else if (sizeTarget.type === "photo") {
         setDownloadingPhotoId(sizeTarget.photoId);
         await downloadSinglePhoto(id, sizeTarget.photoId, sizeTarget.filenameHint, size);
@@ -343,9 +376,7 @@ const PublicGalleryView: React.FC = () => {
         content: e?.message ?? "Could not start download",
       });
     } finally {
-      
       setSizeTarget(null);
-      setDownloading(false);
       setDownloadingPhotoId(null);
     }
   };
@@ -365,7 +396,7 @@ const PublicGalleryView: React.FC = () => {
     : "";
   
   const coverFromPhotos =
-    photos.find((p) => p.is_cover)?.path_preview ||
+    photos.find((p) => p.is_cover)?.path_preview || photos.find((p) => p.is_cover)?.path_original
     photos[0]?.path_preview ||
     photos[0]?.path_original ||
     null;
@@ -482,10 +513,10 @@ const PublicGalleryView: React.FC = () => {
           style={{
             position: "relative",
             width: "100%",
-            height: "60vh",
+            height: "100vh",
             backgroundImage: `url(${coverUrl})`,
             backgroundSize: "cover",
-            backgroundPosition: "center",
+            backgroundPosition: "center top",
           }}
         >
           <div
@@ -633,6 +664,14 @@ const PublicGalleryView: React.FC = () => {
           })}
         </div>
       </Image.PreviewGroup>
+
+          {/* Load more */}
+          {hasMore && (
+            <div style={{ textAlign: "center", margin: 24 }}>
+              <div ref={sentinelRef} aria-hidden="true" />
+              {loadingMore && <Spin style={{ marginTop: 8 }} />}
+            </div>
+          )}
 
       {/* Size picker modal */}
       <SizePicker

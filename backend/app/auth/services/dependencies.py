@@ -46,7 +46,7 @@ def get_optional_current_user(
     Returns the user object if a valid auth token is provided, otherwise returns None.
     Uses oauth2_scheme_optional (auto_error=False) so missing token does NOT raise.
     """
-    # print(token)
+    print(token)
     if not token:
         return None
 

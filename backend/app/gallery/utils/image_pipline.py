@@ -21,6 +21,10 @@ def process_image_pipeline(photo_id: str | int, original_path: str, owner_id: st
             if size != "original":
                 key = f"{gallery_id}/downloads/{size}/{photo_id}"
                 download_keys[size] = (key, longest)
+            elif size == "original":
+                # original is handled separately; skip here
+                key = f"{gallery_id}/downloads/original/{photo_id}"
+                download_keys[size] = (key, None)
         # 1) Get a local temp copy of the original (works for both local+gcs)
         with tempfile.TemporaryDirectory() as td:
             tmp_original = os.path.join(td, "original")

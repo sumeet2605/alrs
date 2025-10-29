@@ -116,6 +116,7 @@ export const GalleryList: React.FC = () => {
               title={g.title}
               coverUrl={resolveUrl(g.cover_url)}
               description={g.description ?? ""}
+              onUpdated={fetchGalleries} 
             />
           </Col>
         ))}

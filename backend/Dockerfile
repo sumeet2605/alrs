@@ -27,7 +27,9 @@ COPY alembic.ini ./alembic.ini
 
 # entrypoint (will run migrations then start uvicorn)
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+
+COPY migrate_db.sh /migrate_db.sh
+RUN chmod +x /entrypoint.sh /migrate_db.sh
 
 EXPOSE 8000
 CMD ["/entrypoint.sh"]

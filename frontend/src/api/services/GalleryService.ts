@@ -66,6 +66,26 @@ export class GalleryService {
     }
 
     /**
+     * Delete Gallery
+     * @param galleryId
+     * @returns void
+     * @throws ApiError
+     */
+    public static deleteGalleryApiGalleriesGalleryIdDelete(
+        galleryId: string,
+    ): CancelablePromise<void> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/galleries/{gallery_id}',
+            path: {
+                'gallery_id': galleryId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * Create Signed Upload Url
      * Generates a V4 signed PUT URL for direct upload to GCS.
      * Returns: { signed_url, object_name, gs_path }

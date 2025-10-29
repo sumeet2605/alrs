@@ -1,6 +1,6 @@
 import os
-from pydantic_settings import BaseSettings
-from pydantic import AnyUrl, field_validator, model_validator
+from pydantic_settings import BaseSettings #type: ignore
+from pydantic import AnyUrl, field_validator, model_validator #type: ignore
 
 class Settings(BaseSettings):
     # core
@@ -28,6 +28,12 @@ class Settings(BaseSettings):
 
     SECURE: bool = False  # use secure cookies
     SAMESITE: str = "lax"  # cookie samesite policy
+
+    
+    CLOUD_TASKS_QUEUE: str
+    CLOUD_TASKS_LOCATION: str
+    CLOUD_TASKS_OIDC_SERVICE_ACCOUNT: str
+    CLOUD_TASKS_TARGET_URL: str
 
     @field_validator("ENV")
     @classmethod

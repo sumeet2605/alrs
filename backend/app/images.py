@@ -208,12 +208,16 @@ def make_thumb(original_path: str, out_path: str, size: int, db: Session | None 
     im.save(out_path, "JPEG", quality=85, optimize=True, progressive=True)
 
 
-def make_size(src_path: str, dst_path: str, longest: int, db: Session | None = None):
+def make_size(src_path: str, dst_path: str, longest, db: Session | None = None):
     """
     Create a resized (longest edge = `longest`) JPEG and apply watermark
     according to brand settings.
     """
-    _resize_longest_edge(src_path, dst_path, longest, db)
+    if longest is None:
+        # just copy original as-is
+        make_original_with_watermark(src_path, dst_path, db)
+    else:
+        _resize_longest_edge(src_path, dst_path, longest, db)
 
 
 def make_original_with_watermark(src_path: str, dst_path: str, db: Session | None = None, quality: int = 92):

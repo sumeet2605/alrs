@@ -20,11 +20,12 @@ from fastapi.responses import FileResponse, StreamingResponse #type: ignore
 from app.gallery.utils.download_helper import ensure_cached_download_for_photo
 from app.storage import storage
 from app.gallery.utils.image_pipline import process_image_pipeline
+from app.tasks import enqueue_image_processing
 from app.gallery.utils.urls import url_from_path
-from app.gallery.utils.zip_gcs import signed_zip_url, ensure_zip_in_gcs, zip_key
+from app.gallery.utils.zip_gcs import signed_zip_url, ensure_zip_in_gcs, zip_key, stream_zip_from_gcs
 from app.settings import settings
 from datetime import datetime, timezone
-from dateutil import parser as dateutil_parser
+from dateutil import parser as dateutil_parser # type: ignore
 from app.gallery.utils.download_quota import check_and_reserve_download
 
 
@@ -56,6 +57,20 @@ async def get_gallery(
     gallery_id: str,
     db: Session = Depends(get_db)):
     return crud.get_gallery(db, gallery_id)
+
+@router.delete("/galleries/{gallery_id}", status_code=204)
+def delete_gallery(
+    gallery_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    gallery = crud.get_gallery(db, gallery_id)
+    if not gallery:
+        raise HTTPException(status_code=404, detail="Gallery not found")
+    if str(gallery.owner_id) != str(user.id):
+        raise HTTPException(status_code=403, detail="Not allowed")
+    crud.delete_gallery(db, gallery_id)
+    return Response(status_code=204)
 
 
 @router.post("/galleries/{gallery_id}/signed-upload")
@@ -127,8 +142,14 @@ def notify_upload(gallery_id: str, payload: NotifyPayload, background_tasks: Bac
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to create photo record: {exc}")
 
-    # schedule background processing (uses your existing pipeline)
-    background_tasks.add_task(process_image_pipeline, p.filename, p.path_original, str(user.id), str(gallery_id))
+    # Enqueue processing via Cloud Tasks so a separate worker (Cloud Run) executes it reliably.
+    try:
+        print("Tasks enqueuing...")
+        enqueue_image_processing(p.filename, p.path_original, str(user.id), str(gallery_id))
+    except Exception as exc:
+        # Fall back to background task if Cloud Tasks is not configured or fails
+        print(exc)
+        raise HTTPException(status_code=500, detail=f"Failed to schedule image processing: {exc}")
 
     return {"id": p.id, "path_original": url_from_path(p.path_thumb if p.path_thumb else p.path_original)}
     
@@ -146,53 +167,53 @@ async def upload_photos(
     # gallery = crud.get_gallery(db, gallery_id)
     # if not gallery or gallery.owner_id != user.id:
     #     raise HTTPException(status_code=404, detail="Gallery not found")
+    pass
+    # created = []
+    # owner_id_str = str(user.id)
+    # gallery_id_str = str(gallery_id)
 
-    created = []
-    owner_id_str = str(user.id)
-    gallery_id_str = str(gallery_id)
-
-    for upload in files:
-        # normalize extension
-        upload.filename = upload.filename.lower()
-        ext = os.path.splitext(upload.filename)[1].lower()
+    # for upload in files:
+    #     # normalize extension
+    #     upload.filename = upload.filename.lower()
+    #     ext = os.path.splitext(upload.filename)[1].lower()
         
-        if not ext:
-            ext = ".jpg"
-        elif not ext.startswith("."):
-            ext = f".{ext}"
+    #     if not ext:
+    #         ext = ".jpg"
+    #     elif not ext.startswith("."):
+    #         ext = f".{ext}"
 
-        # generate file_id (string UUID) for filesystem usage and DB reference
-        file_id = str(uuid.uuid4())
+    #     # generate file_id (string UUID) for filesystem usage and DB reference
+    #     file_id = str(uuid.uuid4())
 
-        key_original = f"{gallery_id_str}/original/{upload.filename}"
+    #     key_original = f"{gallery_id_str}/original/{upload.filename}"
 
-        await upload.seek(0)
-        storage.save_fileobj(upload.file, key_original)
+    #     await upload.seek(0)
+    #     storage.save_fileobj(upload.file, key_original)
         
-        stored_path = f"gs://{config.GCS_BUCKET_NAME}/{key_original}"
-        # absolute filesystem path where we'll save the uploaded original
+    #     stored_path = f"gs://{config.GCS_BUCKET_NAME}/{key_original}"
+    #     # absolute filesystem path where we'll save the uploaded original
 
-        # create DB record and include file_id + relative path
-        p = crud.create_photo(
-            db,
-            gallery_id=gallery_id_str,
-            filename=upload.filename,
-            ext=ext,
-            path_original=stored_path,  # store relative web path in DB
-            file_id=file_id,
-        )
+    #     # create DB record and include file_id + relative path
+    #     p = crud.create_photo(
+    #         db,
+    #         gallery_id=gallery_id_str,
+    #         filename=upload.filename,
+    #         ext=ext,
+    #         path_original=stored_path,  # store relative web path in DB
+    #         file_id=file_id,
+    #     )
 
-        # schedule background processing using absolute path for processing and file_id for lookup
-        background_tasks.add_task(process_image_pipeline, p.filename, stored_path, owner_id_str, gallery_id_str)
+    #     # schedule background processing using absolute path for processing and file_id for lookup
+    #     background_tasks.add_task(process_image_pipeline, p.filename, stored_path, owner_id_str, gallery_id_str)
 
-        created.append({
-            "id": p.id,
-            "file_id": p.file_id,
-            "filename": p.filename,
-            "path_original": p.path_original,
-        })
+    #     created.append({
+    #         "id": p.id,
+    #         "file_id": p.file_id,
+    #         "filename": p.filename,
+    #         "path_original": p.path_original,
+    #     })
 
-    return {"photos": created}
+    # return {"photos": created}
 
 
 @router.post("/galleries/{gallery_id}/password", status_code=200)
@@ -249,19 +270,34 @@ def unlock_gallery_endpoint(gallery_id: str, body: dict, response: Response, db:
         cookie_ttl = default_ttl
     # create signed short-lived token and set cookie
     token = create_gallery_access_token(str(gallery_id), expires_minutes=int(cookie_ttl/60))
+    print(token)
     cookie_name = f"gallery_access_{gallery_id}"
     # print(token)
     # print(cookie_ttl)
-    response.set_cookie(cookie_name, token, httponly=True, max_age=cookie_ttl, samesite=settings.SAMESITE, secure=settings.SECURE, path="/")
+    response.set_cookie(cookie_name,
+                        token, 
+                        httponly=True, 
+                        max_age=cookie_ttl, 
+                        samesite=settings.SAMESITE, 
+                        secure=settings.SECURE,
+                        domain=None)
     return {"ok": True}
 
 @router.get("/galleries/{gallery_id}/photos")
-def list_photos(gallery_id: str,request: Request, db: Session = Depends(get_db), user=Depends(get_optional_current_user)):
+def list_photos(
+    gallery_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    user=Depends(get_optional_current_user),
+    page: int = Query(1, ge=1),
+    per_page: int = Query(10, ge=1, le=200),
+):
     # print(request.headers)
     gallery = crud.get_gallery(db, gallery_id)
     if not gallery:
         raise HTTPException(status_code=404, detail="Gallery not found")
     allowed = False
+    print(user)
     if user:
         allowed = True
     else:
@@ -274,7 +310,9 @@ def list_photos(gallery_id: str,request: Request, db: Session = Depends(get_db),
     if not allowed:
         raise HTTPException(status_code=401, detail="Unauthorized - gallery is password protected")
     
-    photos = crud.list_photos(db, gallery_id)
+    # Use pagination for large galleries
+    offset = (page - 1) * per_page
+    photos, total = crud.list_photos_paginated(db, gallery_id, offset=offset, limit=per_page)
     out = []
     for p in photos:
         out.append({
@@ -289,7 +327,39 @@ def list_photos(gallery_id: str,request: Request, db: Session = Depends(get_db),
             "order_index": p.order_index,
             "is_cover": p.is_cover,
         })
-    return {"photos": out}
+
+    has_more = offset + len(photos) < total
+    return {
+        "photos": out,
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "has_more": has_more,
+    }
+
+
+# Cloud Tasks worker endpoint: non-public HTTP endpoint invoked by Cloud Tasks
+@router.post("/v1/process-image")
+def process_image_worker(payload: dict, db: Session = Depends(get_db)):
+    """Worker endpoint invoked by Cloud Tasks to run the image processing pipeline.
+
+    Expected JSON body: { filename, path_original, owner_id, gallery_id }
+    """
+    filename = payload.get("filename")
+    path_original = payload.get("path_original")
+    owner_id = payload.get("owner_id")
+    gallery_id = payload.get("gallery_id")
+
+    if not filename or not path_original or not owner_id or not gallery_id:
+        raise HTTPException(status_code=400, detail="Missing required fields for processing")
+
+    try:
+        process_image_pipeline(filename, path_original, str(owner_id), str(gallery_id))
+    except Exception as exc:
+        # Raise 500 so Cloud Tasks will retry according to its policy
+        raise HTTPException(status_code=500, detail=f"Processing failed: {exc}")
+
+    return {"ok": True}
 
 
 # -------------------------
@@ -395,13 +465,12 @@ def download_gallery_route(
         raise e
     filename = f"gallery-{gallery_id}-{size}.zip"
     # print("Ziiping")
-    key = ensure_zip_in_gcs(db, gallery_id, size)
-    if linkOnly:
-        url = storage.signed_url(key, expires_seconds=600, response_disposition=None)
-        return {"url": url, "filename": filename}
-    reader = storage.open_reader(key)  # file-like object
+    generator = stream_zip_from_gcs(db, gallery_id, size)
+    
+    photos = crud.list_photos(db, gallery_id)
+    
     return StreamingResponse(
-        reader,
+        generator,
         media_type="application/zip",
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"'
@@ -420,7 +489,7 @@ def download_single_photo(
     current_user = Depends(get_optional_current_user),
 ):
     # Permission
-    check_gallery_access(db, gallery_id, request, current_user)
+    check_gallery_access(db=db, gallery_id=gallery_id, request=request, current_user=current_user)
 
     photo = crud.get_photo(db, gallery_id, photo_id)
     if not photo:

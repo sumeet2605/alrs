@@ -6,6 +6,7 @@ from app.gallery.services import gallery_service as crud
 from app.storage import storage
 import io, os, time
 from app.gallery.utils.download_helper import ensure_cached_download_for_photo
+import zipfile, zipstream #type: ignore
 
 # Build a deterministic key for the ZIP
 def zip_key(gallery_id: str, size: str) -> str:
@@ -70,3 +71,41 @@ def signed_zip_url(db: Session, gallery_id: str, size: str, *, filename: str, ex
     # For GCS signed_url, we can’t change disposition post-sign easily,
     # but you could pre-set blob.content_disposition on the object.
     return url
+
+
+def stream_zip_from_gcs(db: Session, gallery_id: str, size: str = "original"):
+    photos = crud.list_photos(db, gallery_id) or []
+    entries: List[Tuple[str, str]] = []
+    for p in photos:
+        # Your sized image keys (since you removed local FS & owner_id):
+        # originals:   "{gallery}/original/{filename}"
+        # downloads:   "{gallery}/downloads/{size}/{base}.jpg"
+        backend, ref = ensure_cached_download_for_photo(db, p, size)
+        # print(ref)
+        if size == "original":
+            arc = os.path.basename(p.filename)
+        else:
+            base, _ = os.path.splitext(p.filename or f"photo-{p.id}")
+            arc = f"{base}-{size}.jpg"
+        entries.append((ref, arc))
+    
+    z = zipstream.ZipFile(mode="w", compression=zipstream.ZIP_DEFLATED)
+    for gcs_key, arcname in entries:
+        # e: {"object_name": "1/original/foo.jpg", "arcname": "foo.jpg", "needs_watermark": True, "cached_path": "/tmp/..." }
+        object_key = gcs_key
+        arcname = arcname
+    
+        blob = storage._blob(object_key)
+        # Stream directly from GCS
+        def reader():
+            stream = blob.open("rb")
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                yield chunk
+            stream.close()
+
+        z.write_iter(arcname=arcname, iterable=reader())
+
+    for chunk in z:
+        yield chunk
+        # yield small sleep if needed to keep stream alive
+        time.sleep(0.01)

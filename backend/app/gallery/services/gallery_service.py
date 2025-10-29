@@ -1,4 +1,5 @@
 # backend/app/crud.py
+from sqlalchemy import case, true, text # type: ignore
 from sqlalchemy.orm import Session  #type: ignore
 from typing import List, Optional, Dict, Any
 from app.gallery.models import gallery_model as models 
@@ -48,6 +49,14 @@ def create_gallery(db: Session, owner_id: str, title: str, description: Optional
 
 def get_gallery(db:Session, gallery_id:str):
     return db.query(models.Gallery).filter(models.Gallery.id == gallery_id).first()
+
+def delete_gallery(db: Session, gallery_id: str):
+    gallery = db.query(models.Gallery).filter(models.Gallery.id == gallery_id).first()
+    if not gallery:
+        return False
+    db.delete(gallery)
+    db.commit()
+    return True
 
 def list_galleries(db:Session) -> List[models.Gallery]:
     return db.query(models.Gallery).order_by(models.Gallery.created_at.desc()).all()
@@ -103,9 +112,31 @@ def get_galleries_for_owner_with_cover(db: Session, owner_id: str) -> List[model
 
 
 def create_photo(db: Session, gallery_id: str, filename: str, ext: str, path_original: str, file_id: str | None = None):
+    """
+    Create a photo record. This function is idempotent when called with an existing
+    `file_id` or `path_original` — it will return an existing Photo if found rather
+    than creating a duplicate.
+    """
+    # Normalize inputs
+    file_id = file_id or None
+
+    # If file_id provided, prefer that for idempotency check
+    if file_id is not None:
+        existing = db.query(models.Photo).filter(models.Photo.file_id == file_id).first()
+        if existing:
+            return existing
+
+    # Fallback: try to find by exact original path (useful when file_id not provided)
+    if path_original:
+        existing_by_path = db.query(models.Photo).filter(models.Photo.path_original == path_original, models.Photo.gallery_id == gallery_id).first()
+        if existing_by_path:
+            return existing_by_path
+
+    # Not found -> create new record (use provided file_id if present)
     if file_id is None:
         file_id = str(uuid.uuid4())
-    p = models.Photo(gallery_id=gallery_id, filename=filename, ext=ext, path_original=path_original)
+
+    p = models.Photo(gallery_id=gallery_id, filename=filename, ext=ext, path_original=path_original, file_id=file_id)
     db.add(p)
     db.commit()
     db.refresh(p)
@@ -113,6 +144,25 @@ def create_photo(db: Session, gallery_id: str, filename: str, ext: str, path_ori
 
 def list_photos(db: Session, gallery_id: str):
     return db.query(models.Photo).filter(models.Photo.gallery_id == gallery_id).order_by(models.Photo.order_index).all()
+
+
+def list_photos_paginated(db: Session, gallery_id: str, offset: int = 0, limit: int = 10):
+    """
+    Return (items, total) for photos in a gallery using offset/limit pagination.
+    """
+    q = db.query(models.Photo).filter(models.Photo.gallery_id == gallery_id).order_by(models.Photo.id)
+    total = q.count()
+    if offset == 0:
+        cover_priority = case(
+            (models.Photo.is_cover == true(), 0), 
+            else_=1
+        )
+        q = q.order_by(cover_priority, models.Photo.id)
+    else:
+        # For all other pages, just sort by ID
+        q = q.order_by(models.Photo.id)
+    items = q.offset(offset).limit(limit).all()
+    return items, total
 
 
 def get_photo(db: Session, gallery_id: str, photo_id: str):

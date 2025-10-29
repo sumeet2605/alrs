@@ -36,9 +36,9 @@ type UploadItem = {
 };
 
 const RESUMABLE_THRESHOLD_BYTES = 10 * 1024 * 1024; // 10 MB
-const CHUNK_SIZE = 8 * 1024 * 1024; // 8 MB chunks
+const CHUNK_SIZE = 3 * 1024 * 1024; // 8 MB chunks
 const DEFAULT_CONCURRENCY = 3;
-const DEFAULT_AUTO_REMOVE_MS = 5000;
+const DEFAULT_AUTO_REMOVE_MS = 1000;
 
 const MAX_CHUNK_RETRIES = 3;
 const BACKOFF_BASE_MS = 500;
