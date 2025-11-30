@@ -1,7 +1,8 @@
 # Handles forgot password: generates a reset token and (simulated) sends email
 
 # app/services/auth_service.py
-from datetime import datetime, timedelta
+from datetime import timedelta
+from app.tz import now_ist, ensure_aware_in_ist
 from typing import Any
 from os import getenv
 import secrets
@@ -33,7 +34,7 @@ def create_signed_action_token(data: dict, expires_minutes: int = 10) -> tuple[s
     to_encode = data.copy()
     jti = generate_jti()
     to_encode.update({"jti": jti})
-    expire = datetime.utcnow() + timedelta(minutes=expires_minutes)
+    expire = now_ist() + timedelta(minutes=expires_minutes)
     to_encode.update({"exp": expire})
     encoded = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded, {"jti": jti, "exp": expire}
@@ -42,9 +43,9 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     """Creates a JWT access token with an expiration time."""
     to_encode = data.copy()
     if expires_delta:
-        expire = datetime.now() + expires_delta
+        expire = now_ist() + expires_delta
     else:
-        expire = datetime.now() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = now_ist() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -56,9 +57,9 @@ def create_refresh_token(data: dict, expires_delta: timedelta | None = None) -> 
     jti = generate_jti()
     to_encode.update({"jti": jti})
     if expires_delta:
-        expire = datetime.utcnow() + expires_delta
+        expire = now_ist() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+        expire = now_ist() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -85,7 +86,7 @@ def handle_user_login(db: Session, username: str, password: str, ip_address: str
     user = get_user_by_username(username, db)
     
     # 1. Check if user exists and is not locked out
-    if not user or (user.is_locked and user.lockout_until > datetime.utcnow()):
+    if not user or (user.is_locked and ensure_aware_in_ist(user.lockout_until) > now_ist()):
         # Log failed attempt
         audit_log = LoginAudit(
             user_id=user.id if user else None,
@@ -104,7 +105,7 @@ def handle_user_login(db: Session, username: str, password: str, ip_address: str
         # Handle failed attempts and account lock
         user.failed_login_attempts += 1
         if user.failed_login_attempts >= 5: # Lockout threshold
-            user.lockout_until = datetime.utcnow() + timedelta(minutes=15) # 15 min lock
+            user.lockout_until = now_ist() + timedelta(minutes=15) # 15 min lock
         
         # Log failed attempt
         audit_log = LoginAudit(
@@ -141,7 +142,7 @@ def handle_user_login(db: Session, username: str, password: str, ip_address: str
     rt = RefreshToken(
         user_id = user.id,
         jti=refresh_payload["jti"],
-        issued_at=datetime.now(),
+        issued_at=now_ist(),
         expires_at=expires_at,
         revoked=False,
         ip_address=ip_address,
@@ -177,7 +178,7 @@ def handle_forgot_password(db: Session, email: str) -> None:
     # Generate a reset token (for demo, store in user table; in prod, use a separate table)
     reset_token = secrets.token_urlsafe(32)
     user.reset_token = reset_token
-    user.reset_token_expiry = datetime.utcnow() + timedelta(hours=1)
+    user.reset_token_expiry = now_ist() + timedelta(hours=1)
     db.commit()
     # Simulate sending email (replace with actual email logic)
     print(f"Password reset link for {email}: /reset-password?token={reset_token}")
@@ -185,7 +186,7 @@ def handle_forgot_password(db: Session, email: str) -> None:
 # Handles reset password: verifies token and sets new password
 def handle_reset_password(db: Session, token: str, new_password: str) -> None:
     user = db.query(User).filter(User.reset_token == token).first()
-    if not user or not user.reset_token_expiry or user.reset_token_expiry < datetime.utcnow():
+    if not user or not user.reset_token_expiry or ensure_aware_in_ist(user.reset_token_expiry) < now_ist():
         raise HTTPException(status_code=400, detail="Invalid or expired reset token.")
     if len(new_password) < 8:
         raise HTTPException(status_code=400, detail="New password must be at least 8 characters.")

@@ -1,7 +1,7 @@
 # app/models/refresh_token_model.py
 from sqlalchemy import Column, Integer, String, Boolean, ForeignKey, DateTime #type: ignore
 from sqlalchemy.orm import relationship    #type: ignore
-from datetime import datetime
+from app.tz import now_ist
 from app.database import Base
 
 class RefreshToken(Base):
@@ -10,7 +10,7 @@ class RefreshToken(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     jti = Column(String(128), nullable=False, unique=True, index=True)  # JWT ID
-    issued_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    issued_at = Column(DateTime, nullable=False, default=now_ist)
     expires_at = Column(DateTime, nullable=False)
     revoked = Column(Boolean, default=False)
     ip_address = Column(String(80), nullable=True)

@@ -35,7 +35,20 @@ const DefaultLayout: React.FC = () => {
         ? [{ key: '/dashboard/admin/users', icon: <UserOutlined />, label: 'User Management' } as const]
         : []),
     ];
-
+    // 👉 CRM submenu
+    items.push({
+      key: 'crm',
+      icon: <UserOutlined />,
+      label: 'CRM',
+      children: [
+        { key: '/dashboard/crm/clients', label: 'Clients' },
+        { key: '/dashboard/crm/leads', label: 'Leads' },
+        { key: '/dashboard/crm/sessions', label: 'Sessions' },
+        { key: '/dashboard/crm/packages', label: 'Packages' },
+        { key: "/dashboard/crm/addons", label: "Add-ons" },
+        { key: "/dashboard/crm/invoices", label: "Invoices" },
+      ],
+    });
     // Galleries submenu
     items.push({
       key: 'galleries',
@@ -80,6 +93,7 @@ const DefaultLayout: React.FC = () => {
     const path = location.pathname;
     const keys: string[] = [];
     if (path.startsWith('/dashboard/galleries')) keys.push('galleries');
+    if (path.startsWith('/dashboard/crm')) keys.push('crm');
     if (path.startsWith('/settings')) keys.push('settings');
     return keys;
   }, [location.pathname]);

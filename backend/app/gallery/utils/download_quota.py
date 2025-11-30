@@ -1,5 +1,6 @@
 from __future__ import annotations
-from datetime import datetime, timezone, timedelta
+from datetime import timedelta, datetime
+from app.tz import now_ist, ensure_aware_in_ist
 from typing import Optional, Any
 from sqlalchemy.orm import Session #type: ignore
 from fastapi import HTTPException, status #type: ignore
@@ -12,8 +13,8 @@ from sqlalchemy import select, update #type: ignore
 # - We increment download_count by `reserve` atomically (via DB commit)
 
 
-def _now_utc():
-    return datetime.now(timezone.utc)
+def _now_ist():
+    return now_ist()
 
 
 def _is_actor_owner_or_internal(actor: Optional[Any], gallery) -> bool:
@@ -62,14 +63,13 @@ def check_and_reserve_download(db: Session, gallery_id: str, reserve: int = 1, a
     # print(count)
     # print(limit)
     # if reset time is set and in the past, reset the counter
-    now = _now_utc()
+    now = _now_ist()
     if reset_at is not None and isinstance(reset_at, datetime):
-        if reset_at.tzinfo is None:
-            # assume naive timestamps are UTC to avoid comparison issues
-            reset_at = reset_at.replace(tzinfo=timezone.utc)
+        # normalize reset_at into IST-aware datetime for comparison
+        reset_at = ensure_aware_in_ist(reset_at)
         if now >= reset_at:
             gallery.download_count = 0
-            gallery.dresets_at = None
+            gallery.resets_at = None
             db.add(gallery)
             db.commit()
             db.refresh(gallery)

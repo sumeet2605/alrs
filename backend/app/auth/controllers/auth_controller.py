@@ -15,7 +15,7 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm  #t
 from os import getenv
 from app.auth.schemas.user_schema import UserResponse
 from app.auth.models.refresh_token_model import RefreshToken
-from datetime import datetime
+from app.tz import now_ist, ensure_aware_in_ist
 from app.auth.services.user_service import get_user_by_username
 from app.rate_limiter import limiter
 from app.settings import settings
@@ -86,7 +86,7 @@ def refresh_token(
     new_rt = RefreshToken(
         user_id=rt.user_id,
         jti=refresh_payload["jti"],
-        issued_at=datetime.now(),
+        issued_at=now_ist(),
         expires_at=refresh_payload["exp"],
         revoked=False,
         ip_address=None,

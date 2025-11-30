@@ -4,7 +4,8 @@ from typing import BinaryIO, Optional
 from pathlib import Path
 from app import config
 import io, os
-from datetime import datetime, timedelta
+from datetime import timedelta
+from app.tz import now_ist
 from google.auth.transport import requests #type:ignore
 from google.auth import default, compute_engine #type: ignore
 
@@ -83,7 +84,7 @@ class GCSStorage(Storage):
             params["response-content-disposition"] = content_disposition
         if content_type:
             params["response-content-type"] = content_type
-        expiration = datetime.utcnow() + timedelta(seconds=expires)
+        expiration = now_ist() + timedelta(seconds=expires)
 
         if settings.ENV.lower() == "production":
             credentials, _ = default()

@@ -10,10 +10,10 @@ def get_effective_limit(gallery: Gallery) -> int:
     return gallery.favorites_limit if (gallery.favorites_limit is not None and gallery.favorites_limit > 0) else DEFAULT_FAVORITES_LIMIT
 
 def list_favorites(db: Session, gallery_id: int, selector: str):
-    return db.query(Favorite).filter(Favorite.gallery_id==gallery_id, Favorite.selector==selector).all()
+    return db.query(Favorite).filter(Favorite.gallery_id==gallery_id).all()
 
 def count_favorites(db: Session, gallery_id: int, selector: str) -> int:
-    return db.query(Favorite).filter(Favorite.gallery_id==gallery_id, Favorite.selector==selector).count()
+    return db.query(Favorite).filter(Favorite.gallery_id==gallery_id).count()
 
 def add_favorite(db: Session, gallery: Gallery, photo_id: int, selector: str):
     # ensure photo belongs to gallery
@@ -35,8 +35,7 @@ def add_favorite(db: Session, gallery: Gallery, photo_id: int, selector: str):
 def remove_favorite(db: Session, gallery_id: int, photo_id: int, selector: str) -> bool:
     q = db.query(Favorite).filter(
         Favorite.gallery_id==gallery_id,
-        Favorite.photo_id==photo_id,
-        Favorite.selector==selector
+        Favorite.photo_id==photo_id
     )
     if q.first():
         q.delete()

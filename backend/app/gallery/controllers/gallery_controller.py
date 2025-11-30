@@ -24,7 +24,8 @@ from app.tasks import enqueue_image_processing
 from app.gallery.utils.urls import url_from_path
 from app.gallery.utils.zip_gcs import signed_zip_url, ensure_zip_in_gcs, zip_key, stream_zip_from_gcs
 from app.settings import settings
-from datetime import datetime, timezone
+from datetime import timedelta
+from app.tz import now_ist, ensure_aware_in_ist
 from dateutil import parser as dateutil_parser # type: ignore
 from app.gallery.utils.download_quota import check_and_reserve_download
 
@@ -256,13 +257,13 @@ def unlock_gallery_endpoint(gallery_id: str, body: dict, response: Response, db:
     gallery = crud.get_gallery(db, gallery_id)
     # If gallery has expiry and it's in the past, deny
     if getattr(gallery, "password_expires_at", None):
-        if datetime.now(timezone.utc) > gallery.password_expires_at.replace(tzinfo=timezone.utc):
+        if now_ist() > ensure_aware_in_ist(gallery.password_expires_at):
             raise HTTPException(status_code=403, detail="Password has expired")
     
     # compute cookie max_age: default token TTL (e.g. 1 hour) or until gallery expiry
     default_ttl = getattr(config, "GALLERY_ACCESS_TOKEN_TTL", 60*60)  # seconds
     if getattr(gallery, "password_expires_at", None):
-        seconds_until_gallery_expiry = int((gallery.password_expires_at.replace(tzinfo=timezone.utc) - datetime.now(timezone.utc)).total_seconds())
+        seconds_until_gallery_expiry = int((ensure_aware_in_ist(gallery.password_expires_at) - now_ist()).total_seconds())
         if seconds_until_gallery_expiry <= 0:
             raise HTTPException(status_code=403, detail="Password has expired")
         cookie_ttl = min(default_ttl, seconds_until_gallery_expiry)

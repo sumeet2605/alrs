@@ -3,7 +3,8 @@ from sqlalchemy import case, true, text # type: ignore
 from sqlalchemy.orm import Session  #type: ignore
 from typing import List, Optional, Dict, Any
 from app.gallery.models import gallery_model as models 
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta
+from app.tz import now_ist, ensure_aware_in_ist
 import uuid
 from app.auth.utils.password_hasher import get_password_hash, verify_password as verify_plain_password
 from pathlib import Path
@@ -18,9 +19,9 @@ def set_gallery_password(db:Session, gallery_id:str, owner_id:str, password: Opt
         gallery.password_hash = get_password_hash(password)
         gallery.is_public = True
         if expires_at:
-            gallery.password_expires_at = expires_at.astimezone(timezone.utc)
+            gallery.password_expires_at = ensure_aware_in_ist(expires_at)
         elif expires_seconds:
-            gallery.password_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_seconds))
+            gallery.password_expires_at = now_ist() + timedelta(seconds=int(expires_seconds))
         else:
             gallery.password_expires_at = None
     else:

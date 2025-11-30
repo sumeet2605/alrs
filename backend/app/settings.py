@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     CLOUD_TASKS_OIDC_SERVICE_ACCOUNT: str
     CLOUD_TASKS_TARGET_URL: str
 
+    WHATSAPP_VERIFY_TOKEN : str
+    INSTAGRAM_VERIFY_TOKEN : str
+    WHATSAPP_ACCESS_TOKEN : str
+    INSTAGRAM_ACCESS_TOKEN : str
+
     @field_validator("ENV")
     @classmethod
     def env_allowed(cls, v: str) -> str:

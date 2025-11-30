@@ -4,7 +4,7 @@
 /* eslint-disable */
 import type { ApiRequestOptions } from './ApiRequestOptions';
 
-const apiUrl = import.meta.env.VITE_API_BASE;
+export const apiUrl = import.meta.env.VITE_API_BASE;
 // console.log(apiUrl)
 
 type Resolver<T> = (options: ApiRequestOptions) => Promise<T>;

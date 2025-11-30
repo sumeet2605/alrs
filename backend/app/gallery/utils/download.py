@@ -9,7 +9,7 @@ from typing import List, Tuple
 from app.database import get_db
 from app.gallery.services import gallery_service as crud
 from app.gallery.utils.tokens import verify_gallery_access_token
-from datetime import datetime, timezone
+from app.tz import now_ist, ensure_aware_in_ist
 
 
 
@@ -22,7 +22,7 @@ def check_gallery_access(db: Session, gallery_id: str, request: Request, current
     allowed = False
     # if password expired, disallow access unless owner (owner can always access)
     if getattr(gallery, "password_expires_at", None):
-        if datetime.now(timezone.utc) > gallery.password_expires_at.replace(tzinfo=timezone.utc):
+        if now_ist() > ensure_aware_in_ist(gallery.password_expires_at):
             # owner may still access their own galleries (optional)
             if current_user:
                 pass

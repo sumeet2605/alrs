@@ -1,5 +1,6 @@
 # backend/app/auth/utils/tokens.py
-from datetime import datetime, timedelta
+from datetime import timedelta
+from app.tz import now_ist
 from jose import jwt # type: ignore
 from app import config
 from os import getenv
@@ -10,7 +11,7 @@ GALLERY_TOKEN_EXP_MIN = 60  # minutes
 SECRET_KEY = settings.SECRET_KEY
 
 def create_gallery_access_token(gallery_id: str, expires_minutes: int = GALLERY_TOKEN_EXP_MIN) -> str:
-    now = datetime.now()
+    now = now_ist()
     payload = {
         "gallery_id": str(gallery_id),
         "exp": now + timedelta(minutes=expires_minutes),

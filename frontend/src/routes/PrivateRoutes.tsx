@@ -9,12 +9,24 @@ import { GalleryList } from "../pages/Dashboard/GalleryList";
 import { GalleryEditor } from "../pages/Dashboard/GalleryEditor";
 import RegisterPage from "../pages/RegisterPage";
 import BrandingPage from "../pages/Settings/BrandingPage"
+import { ClientsPage } from "../pages/crm/ClientsPage";
+import { LeadsPage } from "../pages/crm/LeadsPage";
+import { SessionsPage } from "../pages/crm/SessionsPage";
+import { PackagesPage } from "../pages/crm/PackagesPage";
+import { AddOnsPage } from "../pages/crm/AddOnsPage";
+import { InvoicesPage } from "../pages/crm/InvoicesPage";
+
 
 export const PrivateRoutes = (
   <>
     <Route path="/dashboard" element={<DefaultLayout />}>
       <Route index element={<DashboardPage />} />
-
+      <Route path="crm/clients" element={<ClientsPage />} />
+      <Route path="crm/leads" element={<LeadsPage />} />
+      <Route path="crm/sessions" element={<SessionsPage />} />
+      <Route path="crm/packages" element={<PackagesPage />} />
+      <Route path="crm/addons" element={<AddOnsPage />} />
+      <Route path="crm/invoices" element={<InvoicesPage />} />
       {/* Galleries (nested under /dashboard) */}
       <Route path="galleries" element={<GalleryList />} />
       <Route path="galleries/:id" element={<GalleryEditor />} />

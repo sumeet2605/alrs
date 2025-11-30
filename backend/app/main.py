@@ -17,6 +17,9 @@ from app.gallery.controllers import gallery_controller, favorites_controller
 from app import config
 from starlette.staticfiles import StaticFiles #type:ignore
 from app.brand import controllers as brand_controllers
+from app.lead.routes.instagram_webhook import router as instagram_webhook_router
+from app.lead.routes.whatsapp_webhook import router as whatsapp_webhook_router
+from app.lead.routes.crm import router as crm_router
 from app.settings import settings
 
 load_dotenv()
@@ -63,3 +66,6 @@ app.include_router(admin_controller.router, prefix="/api")
 app.include_router(gallery_controller.router, prefix="/api")
 app.include_router(brand_controllers.router)
 app.include_router(favorites_controller.router)
+app.include_router(crm_router, prefix="/api")
+app.include_router(instagram_webhook_router)
+app.include_router(whatsapp_webhook_router)

@@ -5,6 +5,8 @@ import { useEffect, useState } from 'react';
 import Typography from '@mui/material/Typography';
 import { ArrowUpOutlined, ClockCircleOutlined, TeamOutlined } from '@ant-design/icons';
 import { UsersService } from '../api/services/UsersService';
+import { CrmService } from '../api/services/CrmService';
+import type { DashboardSummary } from '../api/models/DashboardSummary';
 // --- MOCK AuthContext/useAuth for standalone functionality (The FIX) ---
 // Since the environment couldn't resolve the external import, we provide a basic hook here.
 interface AuthContextType {
@@ -32,9 +34,11 @@ const useAuth = (): AuthContextType => {
 const DashboardPage: React.FC = () => {
   // Now using the mock useAuth defined above
   const { userRole } = useAuth();
-    const displayRole = userRole || 'Client';
-    const [userCount, setUserCount] = useState<number | null>(null);
-    const [userCountLoading, setUserCountLoading] = useState<boolean>(true);
+  const displayRole = userRole || 'Client';
+  const [userCount, setUserCount] = useState<number | null>(null);
+  const [userCountLoading, setUserCountLoading] = useState<boolean>(true);
+  const [crmSummary, setCrmSummary] = useState<DashboardSummary | null>(null);
+  const [crmLoading, setCrmLoading] = useState<boolean>(true);
   
   // Calculate dynamic values based on the role
     useEffect(() => {
@@ -49,6 +53,16 @@ const DashboardPage: React.FC = () => {
     });
 }, []);
   const lowerCaseRole = displayRole.toLowerCase();
+
+  useEffect(() => {
+  CrmService.getDashboardSummaryApiCrmDashboardSummaryGet()
+    .then((data) => setCrmSummary(data))
+    .catch((err) => {
+      console.error(err);
+      setCrmSummary(null);
+    })
+    .finally(() => setCrmLoading(false));
+}, []);
 
   // Determine custom message and logic based on role
   const quickActionMessage = useMemo(() => {
@@ -112,6 +126,40 @@ const DashboardPage: React.FC = () => {
           </Card>
         </Col>
       </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
+  <Col xs={24} md={8}>
+    <Card bordered={false} className="shadow-lg hover:shadow-xl transition-shadow duration-300">
+      <Statistic
+        title="Total Clients"
+        value={crmSummary?.total_clients ?? 0}
+        loading={crmLoading}
+        prefix={<TeamOutlined />}
+      />
+    </Card>
+  </Col>
+  <Col xs={24} md={8}>
+    <Card bordered={false} className="shadow-lg hover:shadow-xl transition-shadow duration-300">
+      <Statistic
+        title="Total Leads"
+        value={crmSummary?.total_leads ?? 0}
+        loading={crmLoading}
+        prefix={<ArrowUpOutlined />}
+      />
+    </Card>
+  </Col>
+  <Col xs={24} md={8}>
+    <Card bordered={false} className="shadow-lg hover:shadow-xl transition-shadow duration-300">
+      <Statistic
+        title="Total Sessions"
+        value={crmSummary?.total_sessions ?? 0}
+        loading={crmLoading}
+        prefix={<ClockCircleOutlined />}
+      />
+    </Card>
+  </Col>
+</Row>
+
       
       <Card title="Quick Actions" style={{ marginTop: 24 }} className="shadow-lg">
         <p className="text-gray-600 mb-2">Your dashboard provides a high-level overview of your studio's operations.</p>
