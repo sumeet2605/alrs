@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import  { useEffect, useState } from "react";
 import { Drawer, Spin, Timeline, Tag, Typography, Card } from "antd";
 import { CrmService } from "../api/services/CrmService";
 

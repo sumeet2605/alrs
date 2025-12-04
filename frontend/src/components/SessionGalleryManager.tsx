@@ -15,7 +15,6 @@ import {
   Spin,
 } from "antd";
 import { CrmService } from "../api/services/CrmService";
-import { GalleryService } from "../api/services/GalleryService";
 
 const { Text } = Typography;
 const { Search } = Input;

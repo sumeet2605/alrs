@@ -19,6 +19,7 @@ import type { ClientRead } from "../../api/models/ClientRead";
 import type { ClientCreate } from "../../api/models/ClientCreate";
 import type { ClientUpdate } from "../../api/models/ClientUpdate";
 
+type ClientFormData = ClientCreate & ClientUpdate;
 
 
 const defaultForm: ClientCreate = {
@@ -35,7 +36,7 @@ export const ClientsPage: React.FC = () => {
   const [clients, setClients] = useState<ClientRead[]>([]);
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
-  const [form, setForm] = useState<ClientCreate | ClientUpdate>(defaultForm);
+  const [form, setForm] = useState<ClientFormData>(defaultForm);
   const [submitting, setSubmitting] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);

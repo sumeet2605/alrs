@@ -31,6 +31,8 @@ import { BudgetBand } from "../../api/models/BudgetBand";
 import dayjs, { Dayjs } from "dayjs";
 import type { LocationType } from "../../api/models/LocationType";
 
+
+type LeadFormData = LeadCreate & LeadUpdate;
 const { Option } = Select;
 
 const leadStages: LeadStage[] = [
@@ -87,7 +89,7 @@ export const LeadsPage: React.FC = () => {
   const [clients, setClients] = useState<ClientRead[]>([]);
   const [leads, setLeads] = useState<LeadRead[]>([]);
   const [stageFilter, setStageFilter] = useState<LeadStage | undefined>();
-  const [form, setForm] = useState<LeadCreate | LeadUpdate>(defaultLead);
+  const [form, setForm] = useState<LeadFormData>(defaultLead);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -401,11 +403,12 @@ export const LeadsPage: React.FC = () => {
                   setForm((f) => ({ ...f, client_id: val as number }))
                 }
                 optionFilterProp="children"
-                filterOption={(input, option) =>
-                  (option?.children as string)
+                filterOption={(input, option) => {
+                  const optionLabel = typeof option?.children === 'string' ? option.children : '';
+                  return optionLabel
                     .toLowerCase()
-                    .includes(input.toLowerCase())
-                }
+                    .includes(input.toLowerCase());
+                }}
                 style={{ width: "100%" }}
               >
                 {clients.map((c) => (

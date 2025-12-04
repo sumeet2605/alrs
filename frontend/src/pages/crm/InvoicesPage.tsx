@@ -292,7 +292,8 @@ export const InvoicesPage: React.FC = () => {
       message.warning("You can add payments only after invoice is created");
       return;
     }
-    if (!paymentForm.amount || paymentForm.amount <= 0) {
+    const amount = Number(paymentForm.amount);
+    if (!amount || amount <= 0) {
       message.warning("Amount must be greater than 0");
       return;
     }
