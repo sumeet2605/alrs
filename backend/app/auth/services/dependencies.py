@@ -30,6 +30,11 @@ def get_current_user(
             detail="Invalid authentication credentials."
         )
 
+    if not token_data.username:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials: missing username."
+        )
     user = user_service.get_user_by_username(token_data.username, db)
     if not user:
         raise HTTPException(
@@ -57,6 +62,8 @@ def get_optional_current_user(
         # token invalid -> behave as unauthenticated
         return None
     # print(token_data.username)
+    if not token_data.username:
+        return None
     user = user_service.get_user_by_username(token_data.username, db)
     # print(user)
     if not user:

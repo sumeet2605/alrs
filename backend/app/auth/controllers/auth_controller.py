@@ -135,7 +135,10 @@ def change_password(
     db: Session = Depends(get_db)
 ):
     token_data = auth_service.decode_token(token)
-    auth_service.change_user_password(db, token_data.username, request.current_password, request.new_password)
+    username = getattr(token_data, "username", None)
+    if username is None:
+        raise HTTPException(status_code=401, detail="Invalid token.")
+    auth_service.change_user_password(db, username, request.current_password, request.new_password)
     return {"message": "Password changed successfully."}
 
 

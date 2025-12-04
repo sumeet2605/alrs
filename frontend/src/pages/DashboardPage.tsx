@@ -60,10 +60,6 @@ export const DashboardPage: React.FC = () => {
   ];
 
   const totalLeads = data?.total_leads || 0;
-  const stageTop = data?.leads_by_stage?.reduce(
-    (max, item) => (item.count > max ? item.count : max),
-    0
-  ) || 0;
   console.log(data)
 
   return (
@@ -115,13 +111,13 @@ export const DashboardPage: React.FC = () => {
                 value={data?.paid_last_30_days ?? 0}
                 precision={0}
               />
-              {data && data.revenue_last_30_days > 0 ? (
+              {data && Number(data.revenue_last_30_days) > 0 ? (
                 <Progress
-                  percent={Number(
+                  percent={parseInt(Number(
                     (Number(data.paid_last_30_days) /
                       Number(data.revenue_last_30_days)) *
                       100
-                  ).toFixed(1)}
+                  ).toFixed(1))}
                   size="small"
                   status="active"
                 />

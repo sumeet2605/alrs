@@ -30,34 +30,11 @@ import {
 import { CrmService } from "../../api/services/CrmService";
 import type { SessionRead } from "../../api/models/SessionRead";
 import type { InvoiceRead } from "../../api/models/InvoiceRead";
+import type { BusinessDashboardResponse } from "../../api/models/BusinessDashboardResponse";
 
 const { RangePicker } = DatePicker;
 
 type RangePreset = "this_month" | "last_3_months" | "this_fy" | "custom";
-
-interface BusinessDashboardApiResponse {
-  revenue_monthly: { month: string; revenue: number }[];
-  lead_sources: {
-    source: string;
-    leads: number;
-    quoted: number;
-    booked: number;
-    delivered: number;
-    revenue: number;
-  }[];
-  funnel: {
-    leads: number;
-    quoted: number;
-    booked: number;
-    delivered: number;
-  };
-  gst_summary: {
-    total_taxable: number;
-    total_gst: number;
-    invoices_count: number;
-    gross_revenue: number;
-  };
-}
 
 type DrillType = "sessions" | "invoices" | null;
 
@@ -86,7 +63,7 @@ export const BusinessDashboardPage: React.FC = () => {
   const [preset, setPreset] = useState<RangePreset>("this_fy");
   const [range, setRange] = useState<[Dayjs, Dayjs]>(getPresetRange("this_fy"));
 
-  const [data, setData] = useState<BusinessDashboardApiResponse | null>(null);
+  const [data, setData] = useState<BusinessDashboardResponse | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Drill-down Drawer state
@@ -100,28 +77,28 @@ export const BusinessDashboardPage: React.FC = () => {
  const fetchDashboard = async (from: Dayjs, to: Dayjs) => {
   setLoading(true);
   try {
-    const res: BusinessDashboardApiResponse =
+    const res: BusinessDashboardResponse =
       await CrmService.getBusinessDashboardApiCrmDashboardBusinessGet(
         from.toISOString(),
         to.toISOString()
       );
 
     // Map API shape -> UI shape
-    const mapped: BusinessDashboard = {
-      date_from: from.toISOString(),
-      date_to: to.toISOString(),
+    const mapped: BusinessDashboardResponse = {
       revenue_monthly: res.revenue_monthly || [],
 
       // map lead_sources -> lead_source_effectiveness
-      lead_source_effectiveness: (res.lead_sources || []).map((s) => ({
+      lead_sources: (res.lead_sources).map((s) => ({
         source: s.source.replace("LeadSource.", "").replace(/_/g, " "), // "LeadSource.WHATSAPP" -> "WHATSAPP"
         leads: s.leads,
+        quoted: s.quoted,
         booked: s.booked,
         delivered: s.delivered,
+        revenue: s.revenue,
       })),
 
       // map funnel -> conversion_funnel
-      conversion_funnel: {
+      funnel: {
         leads: res.funnel?.leads ?? 0,
         quoted: res.funnel?.quoted ?? 0,
         booked: res.funnel?.booked ?? 0,
@@ -129,14 +106,15 @@ export const BusinessDashboardPage: React.FC = () => {
       },
 
       // backend doesn’t send these yet → default empty
-      package_performance: [],
-      add_on_revenue: [],
+      // package_performance: [],
+      // add_on_revenue: [],
 
       // map gst_summary fields
       gst_summary: {
-        taxable_value: res.gst_summary?.total_taxable ?? 0,
-        gst_amount: res.gst_summary?.total_gst ?? 0,
+        total_taxable: res.gst_summary?.total_taxable ?? 0,
+        total_gst: res.gst_summary?.total_gst ?? 0,
         gross_revenue: res.gst_summary?.gross_revenue ?? 0,
+        invoices_count: res.gst_summary?.invoices_count ?? 0,
       },
     };
 
@@ -155,7 +133,8 @@ export const BusinessDashboardPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const funnel = data?.conversion_funnel;
+  const funnel = data?.funnel;
+  console.log(funnel)
 
   // Proper funnel chart data (always safe with ?? 0)
   const funnelChartData = [
@@ -262,6 +241,13 @@ export const BusinessDashboardPage: React.FC = () => {
   };
 
   // ---------- Drill-down ----------
+  /**
+   * Opens the drilldown drawer for sessions in a given date range.
+   * Fetches all sessions, filters by scheduled_start between from and to, and sets drill data.
+   * @param title Title for the drilldown drawer
+   * @param from Start date (Dayjs)
+   * @param to End date (Dayjs)
+   */
   const openSessionsDrilldown = async (title: string, from: Dayjs, to: Dayjs) => {
     setDrillType("sessions");
     setDrillTitle(title);
@@ -271,8 +257,10 @@ export const BusinessDashboardPage: React.FC = () => {
     setDrillRange({ from: fromIso, to: toIso });
 
     try {
+      // Fetch all sessions (limit 500 for performance)
       const sessions: SessionRead[] =
         await CrmService.listSessionsApiCrmSessionsGet(500, 0);
+      // Filter sessions by scheduled_start within the selected range
       const filtered = sessions.filter((s) => {
         if (!s.scheduled_start) return false;
         const d = dayjs(s.scheduled_start);
@@ -287,6 +275,13 @@ export const BusinessDashboardPage: React.FC = () => {
     }
   };
 
+  /**
+   * Opens the drilldown drawer for invoices in a given date range.
+   * Fetches all invoices, filters by paid_at between from and to, and sets drill data.
+   * @param title Title for the drilldown drawer
+   * @param from Start date (Dayjs)
+   * @param to End date (Dayjs)
+   */
   const openInvoicesDrilldown = async (title: string, from: Dayjs, to: Dayjs) => {
     setDrillType("invoices");
     setDrillTitle(title);
@@ -296,11 +291,13 @@ export const BusinessDashboardPage: React.FC = () => {
     setDrillRange({ from: fromIso, to: toIso });
 
     try {
+      // Fetch all invoices
       const invoices: InvoiceRead[] =
-        await CrmService.listInvoicesApiCrmInvoicesGet(500, 0);
+        await CrmService.listInvoicesApiCrmInvoicesGet();
+      // Filter invoices by paid_at within the selected range
       const filtered = invoices.filter((inv) => {
-        if (!inv.paid_at) return false;
-        const d = dayjs(inv.paid_at);
+        if (!inv.due_at) return false;
+        const d = dayjs(inv.due_at);
         return d.isAfter(from) && d.isBefore(to);
       });
       setDrillData(filtered);
@@ -324,7 +321,7 @@ export const BusinessDashboardPage: React.FC = () => {
       title: "Client",
       dataIndex: "client_full_name",
       key: "client",
-      render: (_: any, s) => s.client_full_name || `#${s.client_id}`,
+      render: (_: any, s) => `#${s.client_id}`,
     },
     {
       title: "Session type",
@@ -387,9 +384,9 @@ export const BusinessDashboardPage: React.FC = () => {
   ];
 
   const revenueData = useMemo(() => data?.revenue_monthly || [], [data]);
-  const pkgData = useMemo(() => data?.package_performance || [], [data]);
+  const pkgData = useMemo(() => [], [data]);
   const leadSourceData = useMemo(
-    () => data?.lead_source_effectiveness || [],
+    () => data?.lead_sources || [],
     [data]
   );
 
@@ -472,13 +469,13 @@ export const BusinessDashboardPage: React.FC = () => {
                 <div className="flex justify-between">
                   <span>Taxable value</span>
                   <span className="font-semibold">
-                    ₹{(data.gst_summary?.taxable_value ?? 0).toLocaleString("en-IN")}
+                    ₹{(data.gst_summary?.total_taxable ?? 0).toLocaleString("en-IN")}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span>GST amount</span>
                   <span className="font-semibold">
-                    ₹{(data.gst_summary?.gst_amount ?? 0).toLocaleString("en-IN")}
+                    ₹{(data.gst_summary?.total_gst ?? 0).toLocaleString("en-IN")}
                   </span>
                 </div>
                 <div className="flex justify-between">
@@ -530,11 +527,11 @@ export const BusinessDashboardPage: React.FC = () => {
                 <BarChart
                   data={revenueData}
                   margin={{ top: 10, right: 10, left: 0, bottom: 40 }}
-                  onClick={(chartEvent) => {
+                  onClick={(chartEvent: any) => {
                     const payload = chartEvent?.activePayload?.[0]?.payload as
-                      | { month: string; revenue: number }
+                      | { month: string }
                       | undefined;
-                    if (!payload) return;
+                    if (!payload || !payload.month) return;
                     const m = dayjs(payload.month + "-01");
                     openSessionsDrilldown(
                       `Sessions in ${m.format("MMM YYYY")}`,
@@ -576,7 +573,7 @@ export const BusinessDashboardPage: React.FC = () => {
                 <BarChart
                   data={leadSourceData}
                   margin={{ top: 10, right: 10, left: 0, bottom: 40 }}
-                  onClick={(chartEvent) => {
+                  onClick={(chartEvent: any) => {
                     const payload = chartEvent?.activePayload?.[0]?.payload as
                       | { source: string }
                       | undefined;
@@ -626,7 +623,7 @@ export const BusinessDashboardPage: React.FC = () => {
                 <BarChart
                   data={pkgData}
                   margin={{ top: 10, right: 10, left: 0, bottom: 60 }}
-                  onClick={(chartEvent) => {
+                  onClick={(chartEvent: any) => {
                     const payload = chartEvent?.activePayload?.[0]?.payload as
                       | { package_name: string; revenue: number }
                       | undefined;
@@ -662,7 +659,7 @@ export const BusinessDashboardPage: React.FC = () => {
             <div style={{ width: "100%", height: 260 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart
-                  data={data?.add_on_revenue || []}
+                  // data={data?.add_on_revenue || []}
                   margin={{ top: 10, right: 10, left: 0, bottom: 60 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" />

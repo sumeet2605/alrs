@@ -21,8 +21,10 @@ def check_gallery_access(db: Session, gallery_id: str, request: Request, current
 
     allowed = False
     # if password expired, disallow access unless owner (owner can always access)
-    if getattr(gallery, "password_expires_at", None):
-        if now_ist() > ensure_aware_in_ist(gallery.password_expires_at):
+    password_expires_at = getattr(gallery, "password_expires_at", None)
+    if password_expires_at is not None:
+        expires_at_aware = ensure_aware_in_ist(password_expires_at)
+        if expires_at_aware is not None and now_ist() > expires_at_aware:
             # owner may still access their own galleries (optional)
             if current_user:
                 pass

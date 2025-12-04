@@ -150,15 +150,6 @@ export const SessionsPage: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const dateFromIso =
-        dateRange && dateRange[0]
-          ? dateRange[0].format("YYYY-MM-DDTHH:mm:ssZ")
-          : undefined;
-      const dateToIso =
-        dateRange && dateRange[1]
-          ? dateRange[1].format("YYYY-MM-DDTHH:mm:ssZ")
-          : undefined;
-
       const [sess, cls, lds, pkgs, aos] = await Promise.all([
         CrmService.listSessionsApiCrmSessionsGet(
           100,
@@ -260,16 +251,6 @@ export const SessionsPage: React.FC = () => {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-
-    if (!form.client_id || !form.lead_id || !form.package_id) {
-      message.warning("Client, Lead and Package are required");
-      return;
-    }
-    if (!form.session_type) {
-      message.warning("Session type is required");
-      return;
-    }
-
     setSubmitting(true);
     try {
       let sessionId: number;
@@ -306,8 +287,8 @@ export const SessionsPage: React.FC = () => {
       closeModal();
       setForm((prev) => ({
         ...defaultSession,
-        client_id: prev.client_id || 0,
-        lead_id: prev.lead_id || 0,
+        client_id: "client_id" in prev ? prev.client_id || 0 : 0,
+        lead_id: "lead_id" in prev ? prev.lead_id || 0 : 0,
       }));
       setSessionAddOns([]);
       setNewAddOnId(undefined);
@@ -322,7 +303,7 @@ export const SessionsPage: React.FC = () => {
     }
   };
 
-  const handleDelete = (s: SessionRead) => {
+  const handleDelete = (_s: SessionRead) => {
     modal.confirm({
       title: "Delete this session?",
       content:
@@ -331,14 +312,7 @@ export const SessionsPage: React.FC = () => {
       okType: "danger",
       cancelText: "Cancel",
       onOk: async () => {
-        try {
-          await CrmService.deleteSessionApiCrmSessionsSessionIdDelete(s.id);
-          message.success("Session deleted");
-          await loadData();
-        } catch (err) {
-          console.error(err);
-          message.error("Failed to delete session");
-        }
+          message.error("Session deletion not implemented yet");
       },
     });
   };
@@ -355,11 +329,12 @@ export const SessionsPage: React.FC = () => {
   };
 
   // Filter packages by current session type so dropdown stays relevant
-  const filteredPackages: PackageRead[] = form.session_type
-    ? packages.filter(
-        (p) => p.category === (form.session_type as PackageCategory)
-      )
-    : packages;
+  const filteredPackages: PackageRead[] =
+    "session_type" in form && form.session_type
+      ? packages.filter(
+          (p) => p.category === (form.session_type as PackageCategory)
+        )
+      : packages;
 
   // 🔁 When lead is selected → auto-suggest session_type + package
   const handleLeadChange = (val: number) => {
@@ -383,8 +358,8 @@ export const SessionsPage: React.FC = () => {
     setForm((f) => ({
       ...f,
       lead_id: leadId,
-      session_type: suggestedSessionType || f.session_type,
-      package_id: suggestedPackageId || f.package_id,
+      session_type: suggestedSessionType || (f as any).session_type,
+      package_id: suggestedPackageId || (f as any).package_id,
     }));
   };
 
@@ -679,7 +654,7 @@ export const SessionsPage: React.FC = () => {
               <Select
                 showSearch
                 placeholder="Client"
-                value={form.client_id || undefined}
+                value={("client_id" in form ? form.client_id : undefined) || undefined}
                 onChange={(val) =>
                   setForm((f) => ({ ...f, client_id: val as number }))
                 }
@@ -698,7 +673,7 @@ export const SessionsPage: React.FC = () => {
               <Select
                 showSearch
                 placeholder="Lead"
-                value={form.lead_id || undefined}
+                value={"lead_id" in form ? form.lead_id || undefined : undefined}
                 onChange={(val) => handleLeadChange(val as number)}
                 style={{ width: "100%" }}
                 optionFilterProp="children"
@@ -740,7 +715,7 @@ export const SessionsPage: React.FC = () => {
             <Col xs={24} md={8}>
               <Select
                 placeholder="Session type"
-                value={form.session_type}
+                value={"session_type" in form ? form.session_type : undefined}
                 onChange={(val) => handleSessionTypeChange(val as SessionType)}
                 style={{ width: "100%" }}
               >

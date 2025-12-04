@@ -67,7 +67,7 @@ def check_and_reserve_download(db: Session, gallery_id: str, reserve: int = 1, a
     if reset_at is not None and isinstance(reset_at, datetime):
         # normalize reset_at into IST-aware datetime for comparison
         reset_at = ensure_aware_in_ist(reset_at)
-        if now >= reset_at:
+        if reset_at is not None and now >= reset_at:
             gallery.download_count = 0
             gallery.resets_at = None
             db.add(gallery)

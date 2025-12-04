@@ -45,6 +45,8 @@ def add_favorite(
         if err == "Favorites limit reached":
             raise HTTPException(status_code=409, detail=err)
         raise HTTPException(status_code=400, detail=err)
+    if fav is None:
+        raise HTTPException(status_code=400, detail="Failed to add favorite")
     return {"ok": True, "photo_id": fav.photo_id}
 
 @router.delete("/{gallery_id}/favorites/{photo_id}")

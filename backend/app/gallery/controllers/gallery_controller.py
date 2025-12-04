@@ -256,14 +256,19 @@ def unlock_gallery_endpoint(gallery_id: str, body: dict, response: Response, db:
         raise HTTPException(status_code=403, detail="Invalid password")
     gallery = crud.get_gallery(db, gallery_id)
     # If gallery has expiry and it's in the past, deny
-    if getattr(gallery, "password_expires_at", None):
-        if now_ist() > ensure_aware_in_ist(gallery.password_expires_at):
+    expires_raw = getattr(gallery, "password_expires_at", None)
+    if expires_raw is not None:
+        expires_dt = ensure_aware_in_ist(expires_raw)
+        if expires_dt is None or now_ist() > expires_dt:
             raise HTTPException(status_code=403, detail="Password has expired")
     
     # compute cookie max_age: default token TTL (e.g. 1 hour) or until gallery expiry
     default_ttl = getattr(config, "GALLERY_ACCESS_TOKEN_TTL", 60*60)  # seconds
-    if getattr(gallery, "password_expires_at", None):
-        seconds_until_gallery_expiry = int((ensure_aware_in_ist(gallery.password_expires_at) - now_ist()).total_seconds())
+    if expires_raw is not None:
+        expires_dt = ensure_aware_in_ist(expires_raw)
+        if expires_dt is None:
+            raise HTTPException(status_code=403, detail="Password has expired")
+        seconds_until_gallery_expiry = int((expires_dt - now_ist()).total_seconds())
         if seconds_until_gallery_expiry <= 0:
             raise HTTPException(status_code=403, detail="Password has expired")
         cookie_ttl = min(default_ttl, seconds_until_gallery_expiry)
