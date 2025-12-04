@@ -5,9 +5,9 @@ from sqlalchemy import pool #type: ignore
 from dotenv import load_dotenv #type: ignore
 load_dotenv()
 import os
-
+from app.database import Base
 from alembic import context    #type: ignore
-from app.database import Base  # Import your Base here
+# Import your Base here
 from app.auth.models.user_model import User  # Import all your models here to register them with SQLAlchemy
 from app.auth.models.login_audit_model import LoginAudit   # Import all your models here to register them with SQLAlchemy
 from app.auth.models.role_model import Role, Permission  # Import all your models here to register them with SQLAlchemy
@@ -15,8 +15,11 @@ from app.auth.models.refresh_token_model import RefreshToken  # Import all your 
 from app.gallery.models.gallery_model import Gallery, Photo, Branding
 from app.brand.watermark import BrandSettings
 from app.gallery.models.favorite_model import Favorite
+from app.lead.models.lead_model  import *
+from app.associations import session_galleries
+
 from app.settings import settings
-from app.lead.models.lead_model import *
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config

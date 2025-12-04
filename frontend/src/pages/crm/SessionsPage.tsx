@@ -36,6 +36,7 @@ import type { LeadType } from "../../api/models/LeadType";
 import type { PackageCategory } from "../../api/models/PackageCategory";
 import type { AddOnRead } from "../../api/models/AddOnRead";
 import type { SessionAddOnUpsert } from "../../api/models/SessionAddOnUpsert";
+import { SessionGalleryManager } from "../../components/SessionGalleryManager";
 
 const { Option } = Select;
 const { RangePicker } = DatePicker;
@@ -160,12 +161,8 @@ export const SessionsPage: React.FC = () => {
 
       const [sess, cls, lds, pkgs, aos] = await Promise.all([
         CrmService.listSessionsApiCrmSessionsGet(
-          dateFromIso,
-          dateToIso,
-          undefined,
-          undefined,
-          statusFilter,
-          typeFilter
+          100,
+          0
         ),
         CrmService.listClientsApiCrmClientsGet(undefined, 200),
         CrmService.listLeadsApiCrmLeadsGet(),
@@ -232,7 +229,6 @@ export const SessionsPage: React.FC = () => {
       final_price: s.final_price ?? undefined,
       notes_photographer: s.notes_photographer ?? undefined,
       notes_client_visible: s.notes_client_visible ?? undefined,
-      google_calendar_event_id: s.google_calendar_event_id ?? undefined,
     });
 
     setFinalPriceTouched(false);
@@ -1137,7 +1133,12 @@ export const SessionsPage: React.FC = () => {
                 }
               />
             </Col>
-
+            {/* Session galleries – only show when editing an existing session */}
+            {editId !== null && (
+              <Col xs={24}>
+                <SessionGalleryManager sessionId={editId as number} />
+              </Col>
+            )}
             {/* Actions */}
             <Col xs={24} style={{ marginTop: 8 }}>
               <Space>

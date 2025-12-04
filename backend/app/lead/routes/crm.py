@@ -3,16 +3,18 @@
 from __future__ import annotations
 from decimal import Decimal
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, time, timedelta, date
+from dateutil.relativedelta import relativedelta
 from app.tz import now_ist
-from fastapi import APIRouter, Depends, HTTPException, Query, Response #type:ignore
-from sqlalchemy.orm import Session #type:ignore
-from sqlalchemy import select, func #type: ignore
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status #type:ignore
+from sqlalchemy.orm import Session, selectinload #type:ignore
+from sqlalchemy import select, func, delete, insert, case, and_ #type: ignore
 from app.brand.watermark import BrandSettings
 from app.database import get_db
 from app.lead.models.lead_model import (
     Client,
     Lead,
+    LeadSource,
     Session as PhotoSession,
     Package as PackageModel, PackageCategory,
     LeadStage,
@@ -26,8 +28,14 @@ from app.lead.models.lead_model import (
     PaymentStatus,
     Payment,
     PaymentGateway,
-    PaymentType
+    PaymentType,
+    SessionStatus,
+    LeadType,
 )
+
+from app.gallery.models.gallery_model import Gallery
+from app.associations import session_galleries as SessionGallery
+
 from app.lead.schemas.lead_schemas import (
     ClientCreate,
     ClientUpdate,
@@ -43,6 +51,7 @@ from app.lead.schemas.lead_schemas import (
     PackageRead,
     DashboardSummary,
     LeadStageCount,
+    SourceCount,
     AddOnCreate,
     AddOnRead,
     AddOnUpdate,
@@ -53,6 +62,15 @@ from app.lead.schemas.lead_schemas import (
     InvoiceRead,
     PaymentCreate,
     PaymentRead,
+    SessionGalleryBulkUpdate,
+    SessionGalleryOut,
+)
+from app.lead.schemas.dashboard import (
+    BusinessDashboardResponse,
+    MonthlyRevenueItem,
+    LeadSourceItem,
+    FunnelMetrics,
+    GstSummary,
 )
 
 from app.lead.services.invoice_pdf import build_invoice_pdf
@@ -139,7 +157,7 @@ def delete_client(client_id: int, db: Session = Depends(get_db)):
 
 @router.post("/leads", response_model=LeadRead)
 def create_lead(data: LeadCreate, db: Session = Depends(get_db)):
-    print(data)
+    # print(data)
     client = db.get(Client, data.client_id)
     if not client:
         raise HTTPException(status_code=400, detail="Client does not exist")
@@ -467,7 +485,7 @@ def update_session(
         raise HTTPException(status_code=404, detail="Session not found")
 
     for field, value in data.dict(exclude_unset=True).items():
-        print(field, value)
+        # print(field, value)
         setattr(session, field, value)
 
     db.add(session)
@@ -572,6 +590,200 @@ def set_session_add_ons(
     db.commit()
     return result
 
+#--------------------------------
+# Bulk attach galleries to session
+#--------------------------------
+
+@router.get(
+    "/sessions/{session_id}/galleries",
+    response_model=List[SessionGalleryOut],
+)
+def list_session_galleries(
+    session_id: int,
+    db: Session = Depends(get_db),
+):
+    # ensure session exists
+    sess = db.get(PhotoSession, session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    galleries = (
+        db.query(Gallery)
+        .join(
+            SessionGallery,
+            SessionGallery.c.gallery_id == Gallery.id,
+        )
+        .filter(SessionGallery.c.session_id == session_id)
+        .order_by(Gallery.created_at.desc())
+        .all()
+    )
+
+    # map to SessionGalleryOut – we only expose minimal fields
+    result: list[SessionGalleryOut] = []
+    for g in galleries:
+        result.append(
+            SessionGalleryOut(
+                gallery_id=g.id,
+                title=g.title,
+                is_public=g.is_public,
+                created_at=g.created_at,
+                # if you track preview/cover photo, fill it here:
+                preview_photo_url=None,
+            )
+        )
+    return result
+
+
+@router.put("/sessions/{session_id}/galleries", response_model=SessionRead)
+def set_session_galleries(
+    session_id: int,
+    data: SessionGalleryBulkUpdate,
+    db: Session = Depends(get_db),
+):
+    # 1) check session exists
+    sess = (
+        db.query(PhotoSession)
+        .filter(PhotoSession.id == session_id)
+        .first()
+    )
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # 2) ensure all gallery_ids exist
+    if data.gallery_ids:
+        existing_ids = (
+            db.query(Gallery.id)
+            .filter(Gallery.id.in_(data.gallery_ids))
+            .all()
+        )
+        existing_ids = {gid for (gid,) in existing_ids}
+        missing = set(data.gallery_ids) - existing_ids
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Gallery IDs not found: {sorted(missing)}",
+            )
+
+    # 3) delete existing links for this session
+    db.execute(
+        delete(SessionGallery).where(
+            SessionGallery.c.session_id == session_id
+        )
+    )
+
+    # 4) insert new links (if any)
+    if data.gallery_ids:
+        db.execute(
+            insert(SessionGallery),
+            [
+                {"session_id": session_id, "gallery_id": gid}
+                for gid in data.gallery_ids
+            ],
+        )
+
+    db.commit()
+    db.refresh(sess)
+    return sess
+
+@router.get(
+    "/sessions/{session_id}/galleries/available",
+    response_model=List[SessionGalleryOut],
+)
+def list_available_session_galleries(
+    session_id: int,
+    db: Session = Depends(get_db),
+):
+    subq = (
+        select(SessionGallery.c.gallery_id)
+        .where(SessionGallery.c.session_id == session_id)
+        .subquery()
+    )
+
+    galleries = (
+        db.query(Gallery)
+        .filter(~Gallery.id.in_(subq))
+        .order_by(Gallery.created_at.desc())
+        .all()
+    )
+
+    return [
+        SessionGalleryOut(
+            gallery_id=g.id,
+            title=g.title,
+            description=g.description,
+            is_public=g.is_public,
+            created_at=g.created_at,
+        )
+        for g in galleries
+    ]
+
+@router.post(
+    "/sessions/{session_id}/galleries/{gallery_id}",
+    response_model=SessionGalleryOut,
+    status_code=201,
+)
+def add_session_gallery(
+    session_id: int,
+    gallery_id: int,
+    db: Session = Depends(get_db),
+):
+    # check session
+    sess = db.get(PhotoSession, session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # check gallery
+    gallery = db.get(Gallery, gallery_id)
+    if not gallery:
+        raise HTTPException(status_code=404, detail="Gallery not found")
+
+    # check if already linked
+    already = (
+        db.query(SessionGallery)
+        .filter(
+            SessionGallery.session_id == session_id,
+            SessionGallery.gallery_id == gallery_id,
+        )
+        .first()
+    )
+    if not already:
+        db.add(SessionGallery(session_id=session_id, gallery_id=gallery_id))
+        db.commit()
+
+    return SessionGalleryOut(
+        gallery_id=gallery.id,
+        title=gallery.title,
+        is_public=gallery.is_public,
+        created_at=gallery.created_at,
+        preview_photo_url=None,
+    )
+
+
+@router.delete(
+    "/sessions/{session_id}/galleries/{gallery_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def remove_session_gallery(
+    session_id: int,
+    gallery_id: int,
+    db: Session = Depends(get_db),
+):
+    sess = db.get(PhotoSession, session_id)
+    if not sess:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    result = db.execute(
+        delete(SessionGallery).where(
+            SessionGallery.session_id == session_id,
+            SessionGallery.gallery_id == gallery_id,
+        )
+    )
+    if result.rowcount == 0:
+        # nothing removed, but we can still treat it as 204
+        return
+
+    db.commit()
+
 
 # -------------------
 # ADD-ONS
@@ -637,34 +849,6 @@ def delete_add_on(add_on_id: int, db: Session = Depends(get_db)) -> None:
     db.delete(add_on)
     db.commit()
     return None
-
-# -------------------
-# DASHBOARD SUMMARY
-# -------------------
-
-@router.get("/dashboard/summary", response_model=DashboardSummary)
-def get_dashboard_summary(db: Session = Depends(get_db)):
-    total_clients = db.execute(select(func.count(Client.id))).scalar_one()
-    total_leads = db.execute(select(func.count(Lead.id))).scalar_one()
-    total_sessions = db.execute(select(func.count(PhotoSession.id))).scalar_one()
-
-    # leads grouped by stage
-    rows = db.execute(
-        select(Lead.stage, func.count(Lead.id)).group_by(Lead.stage)
-    ).all()
-
-    leads_by_stage: list[LeadStageCount] = []
-    for stage, count in rows:
-        if stage is None:
-            continue
-        leads_by_stage.append(LeadStageCount(stage=stage, count=count))
-
-    return DashboardSummary(
-        total_clients=total_clients,
-        total_leads=total_leads,
-        total_sessions=total_sessions,
-        leads_by_stage=leads_by_stage,
-    )
 
 
 #-----------------
@@ -908,4 +1092,238 @@ def download_invoice_pdf(invoice_id: int, db: Session = Depends(get_db)):
         headers={
             "Content-Disposition": f'inline; filename="{filename}"',
         },
+    )
+
+
+#-------------------
+# DASHBOARD
+#-------------------
+@router.get("/dashboard/summary", response_model=DashboardSummary)
+def get_dashboard_summary(db: Session = Depends(get_db)):
+    """High-level business dashboard for CRM."""
+
+    # Totals
+    total_clients = db.scalar(select(func.count(Client.id))) or 0
+    total_leads = db.scalar(select(func.count(Lead.id))) or 0
+    total_sessions = db.scalar(select(func.count(PhotoSession.id))) or 0
+    total_invoices = db.scalar(select(func.count(Invoice.id))) or 0
+
+    # Leads by stage
+    rows_stage = (
+        db.execute(
+            select(Lead.stage, func.count(Lead.id)).group_by(Lead.stage)
+        ).all()
+    )
+    leads_by_stage: list[LeadStageCount] = []
+    for stage, count in rows_stage:
+        if stage is None:
+            continue
+        leads_by_stage.append(
+            LeadStageCount(stage=stage, count=int(count or 0))
+        )
+
+    # Leads by source
+    rows_source = (
+        db.execute(
+            select(Lead.source, func.count(Lead.id)).group_by(Lead.source)
+        ).all()
+    )
+    leads_by_source: list[SourceCount] = []
+    for source, count in rows_source:
+        leads_by_source.append(
+            SourceCount(source=source, count=int(count or 0))
+        )
+
+    # Revenue window – last 30 days
+    now_utc = datetime.now()
+    since_30 = now_utc - timedelta(days=30)
+
+    revenue_last_30_days = (
+        db.scalar(
+            select(func.coalesce(func.sum(Invoice.total_amount), 0))
+            .where(Invoice.issued_at >= since_30)
+        )
+        or 0
+    )
+
+    paid_last_30_days = (
+        db.scalar(
+            select(func.coalesce(func.sum(Payment.amount), 0))
+            .where(Payment.status == PaymentStatus.SUCCESS)  # or PaymentStatus.SUCCESS if Enum
+            .where(Payment.paid_at >= since_30)
+        )
+        or 0
+    )
+
+    # Upcoming sessions (today onwards, only tentative/confirmed)
+    upcoming_sessions = (
+        db.scalar(
+            select(func.count(PhotoSession.id)).where(
+               # PhotoSession.scheduled_start >= now_utc,
+                PhotoSession.status.in_([SessionStatus.TENTATIVE, SessionStatus.CONFIRMED]),
+            )
+        )
+    )
+
+    return DashboardSummary(
+        total_clients=total_clients,
+        total_leads=total_leads,
+        total_sessions=total_sessions,
+        total_invoices=total_invoices,
+        leads_by_stage=leads_by_stage,
+        leads_by_source=leads_by_source,
+        revenue_last_30_days=revenue_last_30_days,
+        paid_last_30_days=paid_last_30_days,
+        upcoming_sessions=upcoming_sessions,
+    )
+
+
+@router.get("/dashboard/business", response_model=BusinessDashboardResponse)
+def get_business_dashboard(
+    date_from: datetime,  # however you get these
+    date_to: datetime,  # or however you handle this
+    db: Session = Depends(get_db),
+):
+    # 1) Resolve date_from/date_to from `year` (looks like you're passing a FY end date)
+    #    e.g. if year is 2025-03-31 => FY 2024-04-01 to 2025-03-31
+    # print(f"Business dashboard for period: {date_from} to {date_to}")
+    # ---------- 2) Revenue monthly ----------
+    revenue_rows = (
+        db.query(
+            func.strftime("%Y-%m", Payment.paid_at).label("month"),
+            func.sum(Payment.amount).label("revenue"),
+        )
+        .join(Invoice, Invoice.id == Payment.invoice_id)
+        .filter(
+            Payment.paid_at.isnot(None),
+            Payment.paid_at >= date_from,
+            Payment.paid_at < date_to,
+        )
+        .group_by("month")
+        .order_by("month")
+        .all()
+    )
+
+    revenue_monthly = [
+        MonthlyRevenueItem(
+            month=row.month,
+            revenue=float(row.revenue or 0),
+        )
+        for row in revenue_rows
+    ]
+
+    # ---------- 3) Lead source effectiveness ----------
+    lead_source_rows = (
+        db.query(
+            Lead.source.label("source"),
+            func.count(Lead.id).label("leads"),
+            func.sum(
+                case(
+                    (Lead.stage == LeadStage.QUOTED, 1),
+                    else_=0,
+                )
+            ).label("quoted"),
+            func.sum(
+                case(
+                    (Lead.stage == LeadStage.BOOKED, 1),
+                    else_=0,
+                )
+            ).label("booked"),
+            func.sum(
+                case(
+                    (Lead.stage == LeadStage.DELIVERED, 1),
+                    else_=0,
+                )
+            ).label("delivered"),
+            func.coalesce(func.sum(Invoice.total_amount), 0).label("revenue"),
+        )
+        .outerjoin(PhotoSession, PhotoSession.lead_id == Lead.id)
+        .outerjoin(Invoice, Invoice.session_id == PhotoSession.id)
+        .filter(Lead.created_at >= date_from, Lead.created_at < date_to)
+        .group_by(Lead.source)
+        .all()
+    )
+
+    lead_sources = [
+        LeadSourceItem(
+            source=str(row.source),
+            leads=int(row.leads or 0),
+            quoted=int(row.quoted or 0),
+            booked=int(row.booked or 0),
+            delivered=int(row.delivered or 0),
+            revenue=float(row.revenue or 0),
+        )
+        for row in lead_source_rows
+    ]
+
+    # ---------- 4) Conversion funnel ----------
+    funnel_row = (
+        db.query(
+            func.count(Lead.id).label("leads"),
+            func.sum(
+                case(
+                    (Lead.stage == LeadStage.QUOTED, 1),
+                    else_=0,
+                )
+            ).label("quoted"),
+            func.sum(
+                case(
+                    (Lead.stage == LeadStage.BOOKED, 1),
+                    else_=0,
+                )
+            ).label("booked"),
+            func.sum(
+                case(
+                    (Lead.stage == LeadStage.DELIVERED, 1),
+                    else_=0,
+                )
+            ).label("delivered"),
+        )
+        .filter(Lead.created_at >= date_from, Lead.created_at < date_to)
+        .one()
+    )
+    funnel = FunnelMetrics(
+        leads=int(funnel_row.leads or 0),
+        quoted=int(funnel_row.quoted or 0),
+        booked=int(funnel_row.booked or 0),
+        delivered=int(funnel_row.delivered or 0),
+    )
+    # print(funnel)
+    # ---------- 5) GST summary (CFO view) ----------
+    gst_row = (
+        db.query(
+            func.coalesce(func.sum(Invoice.total_amount/1.06), 0).label("taxable_value"),
+            func.coalesce(func.sum(Invoice.total_amount - (Invoice.total_amount / 1.06)), 0).label("gst_amount"),
+            func.count(Invoice.id).label("invoices_count"),
+            func.coalesce(func.sum(Payment.amount), 0).label("gross_revenue"),
+        )
+        .join(Invoice, Invoice.id == Payment.invoice_id)
+        .filter(
+            Payment.paid_at.isnot(None),
+            Payment.paid_at >= date_from,
+            Payment.paid_at < date_to,
+        )
+        .one_or_none()
+    )
+    # print(gst_row)
+    total_taxable = float(gst_row.taxable_value or 0)
+    total_gst = float(gst_row.gst_amount or 0)
+    invoices_count = int(gst_row.invoices_count or 0)
+    gross_revenue = float(gst_row.gross_revenue or 0)
+
+    # simple 50–50 split of GST → CGST/SGST
+
+    gst_summary = GstSummary(
+        total_taxable=total_taxable,
+        total_gst=total_gst,
+        invoices_count=invoices_count,
+        gross_revenue=gross_revenue,
+    )
+    # print(gst_summary)
+    # ---------- 6) Final response ----------
+    return BusinessDashboardResponse(
+        revenue_monthly=revenue_monthly,
+        lead_sources=lead_sources,
+        funnel=funnel,
+        gst_summary=gst_summary,
     )

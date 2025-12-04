@@ -36,7 +36,7 @@ def enqueue_image_processing(filename: str, path_original: str, owner_id: str, g
         raise RuntimeError("GCP project id not configured")
 
     parent = client.queue_path(project, location, queue)
-    print(worker_url)
+    # print(worker_url)
     payload = {
         "filename": filename,
         "path_original": path_original,

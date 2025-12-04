@@ -15,6 +15,7 @@ import { SessionsPage } from "../pages/crm/SessionsPage";
 import { PackagesPage } from "../pages/crm/PackagesPage";
 import { AddOnsPage } from "../pages/crm/AddOnsPage";
 import { InvoicesPage } from "../pages/crm/InvoicesPage";
+import { BusinessDashboardPage } from "../pages/crm/BusinessDashboardPage";
 
 
 export const PrivateRoutes = (
@@ -27,6 +28,7 @@ export const PrivateRoutes = (
       <Route path="crm/packages" element={<PackagesPage />} />
       <Route path="crm/addons" element={<AddOnsPage />} />
       <Route path="crm/invoices" element={<InvoicesPage />} />
+      <Route path="crm/business-dashboard" element={<BusinessDashboardPage />} />
       {/* Galleries (nested under /dashboard) */}
       <Route path="galleries" element={<GalleryList />} />
       <Route path="galleries/:id" element={<GalleryEditor />} />

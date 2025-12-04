@@ -203,8 +203,8 @@ class SessionBase(BaseModel):
 
     location_type: LocationType
     location_address: Optional[str] = None
-
     total_price: Optional[float] = None
+    gallery_ids: Optional[List[int]] = None
     discount_amount: Optional[float] = 0
     final_price: Optional[float] = None
 
@@ -224,6 +224,7 @@ class SessionUpdate(BaseModel):
     location_type: Optional[LocationType] = None
     location_address: Optional[str] = None
     total_price: Optional[float] = None
+    gallery_ids: Optional[List[int]] = None
     discount_amount: Optional[float] = None
     final_price: Optional[float] = None
     notes_photographer: Optional[str] = None
@@ -234,6 +235,20 @@ class SessionRead(SessionBase):
     id: int
     created_at: datetime
     updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SessionGalleryBulkUpdate(BaseModel):
+    gallery_ids: List[int]
+
+class SessionGalleryOut(BaseModel):
+    gallery_id: int
+    title: str
+    is_public: bool | None = None
+    created_at: datetime | None = None
+    preview_photo_url: str | None = None  # optional, if you have it
 
     class Config:
         from_attributes = True
@@ -293,12 +308,28 @@ class LeadStageCount(BaseModel):
     stage: LeadStage
     count: int
 
+class SourceCount(BaseModel):
+    source: Optional[LeadSource]
+    count: int
+
+class RevenuePoint(BaseModel):
+    date: date
+    amount: Decimal
+
+
 
 class DashboardSummary(BaseModel):
     total_leads: int
     total_clients: int
     total_sessions: int
+    total_invoices: int
     leads_by_stage: List[LeadStageCount]
+    leads_by_source: List[SourceCount]
+
+    revenue_last_30_days: Decimal
+    paid_last_30_days: Decimal
+
+    upcoming_sessions: int
 
 
 # -------------------
@@ -375,3 +406,5 @@ class PaymentRead(BaseModel):
 
     class Config:
         from_attributes = True
+
+

@@ -5,6 +5,7 @@
 import type { AddOnCreate } from '../models/AddOnCreate';
 import type { AddOnRead } from '../models/AddOnRead';
 import type { AddOnUpdate } from '../models/AddOnUpdate';
+import type { BusinessDashboardResponse } from '../models/BusinessDashboardResponse';
 import type { ClientCreate } from '../models/ClientCreate';
 import type { ClientRead } from '../models/ClientRead';
 import type { ClientUpdate } from '../models/ClientUpdate';
@@ -26,6 +27,8 @@ import type { PaymentRead } from '../models/PaymentRead';
 import type { SessionAddOnItemOut } from '../models/SessionAddOnItemOut';
 import type { SessionAddOnUpsert } from '../models/SessionAddOnUpsert';
 import type { SessionCreate } from '../models/SessionCreate';
+import type { SessionGalleryBulkUpdate } from '../models/SessionGalleryBulkUpdate';
+import type { SessionGalleryOut } from '../models/SessionGalleryOut';
 import type { SessionRead } from '../models/SessionRead';
 import type { SessionUpdate } from '../models/SessionUpdate';
 import type { CancelablePromise } from '../core/CancelablePromise';
@@ -510,6 +513,116 @@ export class CrmService {
         });
     }
     /**
+     * List Session Galleries
+     * @param sessionId
+     * @returns SessionGalleryOut Successful Response
+     * @throws ApiError
+     */
+    public static listSessionGalleriesApiCrmSessionsSessionIdGalleriesGet(
+        sessionId: number,
+    ): CancelablePromise<Array<SessionGalleryOut>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/crm/sessions/{session_id}/galleries',
+            path: {
+                'session_id': sessionId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Set Session Galleries
+     * @param sessionId
+     * @param requestBody
+     * @returns SessionRead Successful Response
+     * @throws ApiError
+     */
+    public static setSessionGalleriesApiCrmSessionsSessionIdGalleriesPut(
+        sessionId: number,
+        requestBody: SessionGalleryBulkUpdate,
+    ): CancelablePromise<SessionRead> {
+        return __request(OpenAPI, {
+            method: 'PUT',
+            url: '/api/crm/sessions/{session_id}/galleries',
+            path: {
+                'session_id': sessionId,
+            },
+            body: requestBody,
+            mediaType: 'application/json',
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * List Available Session Galleries
+     * @param sessionId
+     * @returns SessionGalleryOut Successful Response
+     * @throws ApiError
+     */
+    public static listAvailableSessionGalleriesApiCrmSessionsSessionIdGalleriesAvailableGet(
+        sessionId: number,
+    ): CancelablePromise<Array<SessionGalleryOut>> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/crm/sessions/{session_id}/galleries/available',
+            path: {
+                'session_id': sessionId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Add Session Gallery
+     * @param sessionId
+     * @param galleryId
+     * @returns SessionGalleryOut Successful Response
+     * @throws ApiError
+     */
+    public static addSessionGalleryApiCrmSessionsSessionIdGalleriesGalleryIdPost(
+        sessionId: number,
+        galleryId: number,
+    ): CancelablePromise<SessionGalleryOut> {
+        return __request(OpenAPI, {
+            method: 'POST',
+            url: '/api/crm/sessions/{session_id}/galleries/{gallery_id}',
+            path: {
+                'session_id': sessionId,
+                'gallery_id': galleryId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Remove Session Gallery
+     * @param sessionId
+     * @param galleryId
+     * @returns void
+     * @throws ApiError
+     */
+    public static removeSessionGalleryApiCrmSessionsSessionIdGalleriesGalleryIdDelete(
+        sessionId: number,
+        galleryId: number,
+    ): CancelablePromise<void> {
+        return __request(OpenAPI, {
+            method: 'DELETE',
+            url: '/api/crm/sessions/{session_id}/galleries/{gallery_id}',
+            path: {
+                'session_id': sessionId,
+                'gallery_id': galleryId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
      * List Add Ons
      * @param isActive
      * @returns AddOnRead Successful Response
@@ -590,17 +703,6 @@ export class CrmService {
             errors: {
                 422: `Validation Error`,
             },
-        });
-    }
-    /**
-     * Get Dashboard Summary
-     * @returns DashboardSummary Successful Response
-     * @throws ApiError
-     */
-    public static getDashboardSummaryApiCrmDashboardSummaryGet(): CancelablePromise<DashboardSummary> {
-        return __request(OpenAPI, {
-            method: 'GET',
-            url: '/api/crm/dashboard/summary',
         });
     }
     /**
@@ -735,6 +837,61 @@ export class CrmService {
             url: '/api/crm/invoices/{invoice_id}/payments',
             path: {
                 'invoice_id': invoiceId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Download Invoice Pdf
+     * @param invoiceId
+     * @returns any Successful Response
+     * @throws ApiError
+     */
+    public static downloadInvoicePdfApiCrmInvoicesInvoiceIdPdfGet(
+        invoiceId: number,
+    ): CancelablePromise<any> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/crm/invoices/{invoice_id}/pdf',
+            path: {
+                'invoice_id': invoiceId,
+            },
+            errors: {
+                422: `Validation Error`,
+            },
+        });
+    }
+    /**
+     * Get Dashboard Summary
+     * High-level business dashboard for CRM.
+     * @returns DashboardSummary Successful Response
+     * @throws ApiError
+     */
+    public static getDashboardSummaryApiCrmDashboardSummaryGet(): CancelablePromise<DashboardSummary> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/crm/dashboard/summary',
+        });
+    }
+    /**
+     * Get Business Dashboard
+     * @param dateFrom
+     * @param dateTo
+     * @returns BusinessDashboardResponse Successful Response
+     * @throws ApiError
+     */
+    public static getBusinessDashboardApiCrmDashboardBusinessGet(
+        dateFrom: string,
+        dateTo: string,
+    ): CancelablePromise<BusinessDashboardResponse> {
+        return __request(OpenAPI, {
+            method: 'GET',
+            url: '/api/crm/dashboard/business',
+            query: {
+                'date_from': dateFrom,
+                'date_to': dateTo,
             },
             errors: {
                 422: `Validation Error`,

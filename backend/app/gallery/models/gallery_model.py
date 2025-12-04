@@ -1,12 +1,15 @@
-from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, Text, DateTime #type: ignore
+from sqlalchemy import Column, Integer, String, Boolean, TIMESTAMP, Text, DateTime, UniqueConstraint, Table #type: ignore
 from sqlalchemy.sql import func #type: ignore
 from sqlalchemy import ForeignKey #type: ignore
 from sqlalchemy.orm import relationship #type: ignore
 from app.database import Base #type: ignore
 import uuid
+from app.associations import session_galleries
 
 def gen_uuid_str():
     return str(uuid.uuid4())
+
+# Association table: sessions <-> galleries
 
 class Gallery(Base):
     __tablename__ = "galleries"
@@ -26,8 +29,10 @@ class Gallery(Base):
 
     owner = relationship("User", back_populates="galleries")
     photos = relationship("Photo", back_populates="gallery", cascade="all, delete-orphan", order_by="Photo.order_index")
+    sessions = relationship("Session", secondary=session_galleries, back_populates="galleries", viewonly=True)
 
-
+    # convenience many-to-many
+    
 class Photo(Base):
     __tablename__ = "photos"
     id = Column(Integer, primary_key=True, index=True)
@@ -55,3 +60,4 @@ class Branding(Base):
     watermark_path = Column(String(1024), nullable=True)
     watermark_opacity = Column(Integer, default=40)  # store as percent (0-100)
     watermark_scale = Column(Integer, default=20)    # percent
+

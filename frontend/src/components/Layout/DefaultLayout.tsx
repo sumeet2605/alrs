@@ -47,6 +47,7 @@ const DefaultLayout: React.FC = () => {
         { key: '/dashboard/crm/packages', label: 'Packages' },
         { key: "/dashboard/crm/addons", label: "Add-ons" },
         { key: "/dashboard/crm/invoices", label: "Invoices" },
+        { key: "/dashboard/crm/business-dashboard", label: "Business Dashboard" },
       ],
     });
     // Galleries submenu

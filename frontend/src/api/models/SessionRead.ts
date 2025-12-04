@@ -16,6 +16,7 @@ export type SessionRead = {
     location_type: LocationType;
     location_address?: (string | null);
     total_price?: (number | null);
+    gallery_ids?: (Array<number> | null);
     discount_amount?: (number | null);
     final_price?: (number | null);
     notes_photographer?: (string | null);

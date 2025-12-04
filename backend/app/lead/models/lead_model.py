@@ -16,10 +16,12 @@ from sqlalchemy import ( #type: ignore
     UniqueConstraint,
     func,
 ) #type: ignore
-from sqlalchemy.dialects.postgresql import JSONB #type: ignore
-from sqlalchemy.orm import declarative_base, relationship #type: ignore
+from sqlalchemy.orm import relationship #type: ignore
+from app.database import Base
+from sqlalchemy import UniqueConstraint #type: ignore
+from app.associations import session_galleries
 
-Base = declarative_base()
+# Use shared Base from app.database
 
 # -------------------------------------------------------
 # ENUM DEFINITIONS
@@ -52,6 +54,9 @@ class LeadStage(PyEnum):
     SHOT = "shot"
     DELIVERED = "delivered"
     CLOSED_LOST = "closed_lost"
+    CONTACTED = "contacted"
+    COMPLETED = "completed"
+
 
 class LocationType(PyEnum):
     HOME = "home"
@@ -296,6 +301,7 @@ class Session(TimestampMixin, Base):
     lead_id = Column(Integer, ForeignKey("leads.id"), nullable=False)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=False)
     package_id = Column(Integer, ForeignKey("packages.id"), nullable=False)
+    
 
     session_type = Column(Enum(SessionType), nullable=False)
     status = Column(Enum(SessionStatus), default=SessionStatus.TENTATIVE)
@@ -317,10 +323,10 @@ class Session(TimestampMixin, Base):
     lead = relationship("Lead", back_populates="sessions")
     client = relationship("Client", back_populates="sessions")
     package = relationship("Package", back_populates="sessions")
-
+   
     session_add_ons = relationship("SessionAddOn", back_populates="session", cascade="all, delete-orphan")
     invoices = relationship("Invoice", back_populates="session", cascade="all, delete-orphan")
-
+    galleries = relationship("Gallery", secondary=session_galleries, back_populates="sessions", viewonly=True)
 
 class SessionAddOn(TimestampMixin, Base):
     __tablename__ = "session_add_ons"
@@ -405,7 +411,7 @@ class Message(TimestampMixin, Base):
     external_message_id = Column(String(255))
     content_text = Column(Text)
     content_type = Column(Enum(ContentType), default=ContentType.TEXT)
-    raw_payload = Column(JSONB)
+    raw_payload = Column(JSON)
 
     intent_label = Column(String(50))
     handled_by_agent = Column(String(50))
@@ -431,3 +437,5 @@ class FollowUp(TimestampMixin, Base):
 
     lead = relationship("Lead", back_populates="follow_ups")
     session = relationship("Session")
+
+

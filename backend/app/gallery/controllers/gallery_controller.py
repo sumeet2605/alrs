@@ -271,7 +271,7 @@ def unlock_gallery_endpoint(gallery_id: str, body: dict, response: Response, db:
         cookie_ttl = default_ttl
     # create signed short-lived token and set cookie
     token = create_gallery_access_token(str(gallery_id), expires_minutes=int(cookie_ttl/60))
-    print(token)
+    # print(token)
     cookie_name = f"gallery_access_{gallery_id}"
     # print(token)
     # print(cookie_ttl)
@@ -298,7 +298,7 @@ def list_photos(
     if not gallery:
         raise HTTPException(status_code=404, detail="Gallery not found")
     allowed = False
-    print(user)
+    # print(user)
     if user:
         allowed = True
     else:

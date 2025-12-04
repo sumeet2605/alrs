@@ -1,171 +1,203 @@
-import React, { useMemo } from 'react';
-import { Card, Row, Col, Statistic } from 'antd';
-// Removed: import { useAuth } from '../contexts/AuthContext'; - This caused the build error
-import { useEffect, useState } from 'react';
-import Typography from '@mui/material/Typography';
-import { ArrowUpOutlined, ClockCircleOutlined, TeamOutlined } from '@ant-design/icons';
-import { UsersService } from '../api/services/UsersService';
-import { CrmService } from '../api/services/CrmService';
-import type { DashboardSummary } from '../api/models/DashboardSummary';
-// --- MOCK AuthContext/useAuth for standalone functionality (The FIX) ---
-// Since the environment couldn't resolve the external import, we provide a basic hook here.
-interface AuthContextType {
-  // We use 'Owner' as a default role for demonstration, but this should come from your actual API response.
-  userRole: string | null; 
-}
+import React, { useEffect, useState } from "react";
+import { Card, Row, Col, Statistic, App, Tag, Progress, Space, Table } from "antd";
+import type { ColumnsType } from "antd/es/table";
+import { CrmService } from "../api/services/CrmService";
+import type { DashboardSummary } from "../api/models/DashboardSummary";
+import type { LeadStageCount } from "../api/models/LeadStageCount";
+import type { SourceCount } from "../api/models/SourceCount";
 
-/**
- * Mock useAuth hook to simulate fetching the user's role.
- * Replace this with your actual useAuth hook connected to your authentication service.
- */
-const useAuth = (): AuthContextType => {
-  // Assuming the user is logged in, use the role from your authentication state.
-  // For now, hardcode 'Owner' to test the role-based logic.
-  const mockUserRole = 'Owner'; 
-  return { userRole: mockUserRole };
-};
-// --------------------------------------------------------------------------
+const pretty = (val?: string | null) =>
+  val ? val.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()) : "";
 
-/**
- * Utility function to return a dynamic team size based on the user's role.
- * You can expand this function to handle all your defined backend roles.
- */
+export const DashboardPage: React.FC = () => {
+  const { message } = App.useApp();
+  const [data, setData] = useState<DashboardSummary | null>(null);
+  const [loading, setLoading] = useState(false);
 
-const DashboardPage: React.FC = () => {
-  // Now using the mock useAuth defined above
-  const { userRole } = useAuth();
-  const displayRole = userRole || 'Client';
-  const [userCount, setUserCount] = useState<number | null>(null);
-  const [userCountLoading, setUserCountLoading] = useState<boolean>(true);
-  const [crmSummary, setCrmSummary] = useState<DashboardSummary | null>(null);
-  const [crmLoading, setCrmLoading] = useState<boolean>(true);
-  
-  // Calculate dynamic values based on the role
-    useEffect(() => {
-  UsersService.listAllUsersApiUsersGet()
-    .then(users => {
-      setUserCount(users.length);
-      setUserCountLoading(false);
-    })
-    .catch(() => {
-      setUserCount(null);
-      setUserCountLoading(false);
-    });
-}, []);
-  const lowerCaseRole = displayRole.toLowerCase();
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await CrmService.getDashboardSummaryApiCrmDashboardSummaryGet();
+      setData(res);
+    } catch (err) {
+      console.error(err);
+      message.error("Failed to load dashboard");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-  CrmService.getDashboardSummaryApiCrmDashboardSummaryGet()
-    .then((data) => setCrmSummary(data))
-    .catch((err) => {
-      console.error(err);
-      setCrmSummary(null);
-    })
-    .finally(() => setCrmLoading(false));
-}, []);
+    load();
+  }, []);
 
-  // Determine custom message and logic based on role
-  const quickActionMessage = useMemo(() => {
-    switch (lowerCaseRole) {
-      case 'admin':
-      case 'owner':
-        return "As an **Owner/Admin**, you have full control over user management, finance reports, and system configuration. Use the side menu to navigate key administrative tasks.";
-      case 'manager':
-        return "As a **Manager**, focus on monitoring active sessions, allocating resources to new projects, and reviewing team efficiency reports.";
-      case 'developer':
-        return "As a **Developer**, your focus is on code commits and resolving open issues. Use the task tracker for your daily priorities.";
-      case 'client':
-      default:
-        return "As a **Client**, this dashboard provides an overview of your active projects. Use the 'Projects' menu to review status and provide feedback.";
-    }
-  }, [lowerCaseRole]);
-  
-  // Custom logic for the 'New Projects' statistic
-  const newProjectsValue = lowerCaseRole === 'client' ? 1 : 11;
+  const leadsByStageColumns: ColumnsType<LeadStageCount> = [
+    {
+      title: "Stage",
+      dataIndex: "stage",
+      key: "stage",
+      render: (s) => pretty(s),
+    },
+    {
+      title: "Count",
+      dataIndex: "count",
+      key: "count",
+    },
+  ];
 
+  const leadsBySourceColumns: ColumnsType<SourceCount> = [
+    {
+      title: "Source",
+      dataIndex: "source",
+      key: "source",
+      render: (s) => pretty(s) || <em>Unknown</em>,
+    },
+    {
+      title: "Count",
+      dataIndex: "count",
+      key: "count",
+    },
+  ];
+
+  const totalLeads = data?.total_leads || 0;
+  const stageTop = data?.leads_by_stage?.reduce(
+    (max, item) => (item.count > max ? item.count : max),
+    0
+  ) || 0;
+  console.log(data)
 
   return (
-    <div className="p-4 md:p-8 max-w-7xl mx-auto">
-      <Typography variant="h4" gutterBottom style={{ marginBottom: 24 }}>
-        Welcome back, {displayRole}!
-      </Typography>
+    <div className="space-y-4">
+      <Row justify="space-between" align="middle">
+        <Col>
+          <h2 className="text-xl font-semibold">CRM Dashboard</h2>
+        </Col>
+      </Row>
 
+      {/* Top stats */}
       <Row gutter={[16, 16]}>
-        <Col xs={24} md={8}>
-          <Card bordered={false} className="shadow-lg hover:shadow-xl transition-shadow duration-300">
-            <Statistic
-              title="New Projects (30 Days)"
-              value={newProjectsValue} // Dynamic value
-              precision={0}
-              valueStyle={{ color: '#3f8600' }}
-              prefix={<ArrowUpOutlined />}
-              suffix="projects"
-            />
+        <Col xs={12} md={6}>
+          <Card loading={loading}>
+            <Statistic title="Total Leads" value={data?.total_leads ?? 0} />
           </Card>
         </Col>
-        <Col xs={24} md={8}>
-          <Card bordered={false} className="shadow-lg hover:shadow-xl transition-shadow duration-300">
-            <Statistic
-              title="Active Sessions"
-              value={93.05}
-              precision={2}
-              valueStyle={{ color: '#cf1322' }}
-              prefix={<ClockCircleOutlined />}
-              suffix="hours"
-            />
+        <Col xs={12} md={6}>
+          <Card loading={loading}>
+            <Statistic title="Total Clients" value={data?.total_clients ?? 0} />
           </Card>
         </Col>
-        <Col xs={24} md={8}>
-          <Card bordered={false} className="shadow-lg hover:shadow-xl transition-shadow duration-300">
-            <Statistic
-              title="Team Size"
-               value={userCountLoading ? '...' : userCount ?? 'N/A'} // Dynamic value based on role
-              valueStyle={{ color: '#1890ff' }}
-              prefix={<TeamOutlined />}
-            />
+        <Col xs={12} md={6}>
+          <Card loading={loading}>
+            <Statistic title="Sessions" value={data?.total_sessions ?? 0} />
+          </Card>
+        </Col>
+        <Col xs={12} md={6}>
+          <Card loading={loading}>
+            <Statistic title="Invoices" value={data?.total_invoices ?? 0} />
           </Card>
         </Col>
       </Row>
 
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-  <Col xs={24} md={8}>
-    <Card bordered={false} className="shadow-lg hover:shadow-xl transition-shadow duration-300">
-      <Statistic
-        title="Total Clients"
-        value={crmSummary?.total_clients ?? 0}
-        loading={crmLoading}
-        prefix={<TeamOutlined />}
-      />
-    </Card>
-  </Col>
-  <Col xs={24} md={8}>
-    <Card bordered={false} className="shadow-lg hover:shadow-xl transition-shadow duration-300">
-      <Statistic
-        title="Total Leads"
-        value={crmSummary?.total_leads ?? 0}
-        loading={crmLoading}
-        prefix={<ArrowUpOutlined />}
-      />
-    </Card>
-  </Col>
-  <Col xs={24} md={8}>
-    <Card bordered={false} className="shadow-lg hover:shadow-xl transition-shadow duration-300">
-      <Statistic
-        title="Total Sessions"
-        value={crmSummary?.total_sessions ?? 0}
-        loading={crmLoading}
-        prefix={<ClockCircleOutlined />}
-      />
-    </Card>
-  </Col>
-</Row>
+      {/* Revenue + upcoming */}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} md={12}>
+          <Card title="Revenue (last 30 days)" loading={loading}>
+            <Space direction="vertical" size="small" style={{ width: "100%" }}>
+              <Statistic
+                title="Invoiced"
+                prefix="₹"
+                value={data?.revenue_last_30_days ?? 0}
+                precision={0}
+              />
+              <Statistic
+                title="Paid"
+                prefix="₹"
+                value={data?.paid_last_30_days ?? 0}
+                precision={0}
+              />
+              {data && data.revenue_last_30_days > 0 ? (
+                <Progress
+                  percent={Number(
+                    (Number(data.paid_last_30_days) /
+                      Number(data.revenue_last_30_days)) *
+                      100
+                  ).toFixed(1)}
+                  size="small"
+                  status="active"
+                />
+              ) : (
+                <span style={{ fontSize: 12, color: "#999" }}>
+                  No revenue yet in this period
+                </span>
+              )}
+            </Space>
+          </Card>
+        </Col>
 
-      
-      <Card title="Quick Actions" style={{ marginTop: 24 }} className="shadow-lg">
-        <p className="text-gray-600 mb-2">Your dashboard provides a high-level overview of your studio's operations.</p>
-        {/* Using dangerouslySetInnerHTML to allow for simple Markdown-like text (e.g., **bold**) */}
-        <p className="font-medium" dangerouslySetInnerHTML={{ __html: quickActionMessage }}></p>
-      </Card>
+        <Col xs={24} md={12}>
+          <Card title="Upcoming sessions" loading={loading}>
+            <Space direction="vertical">
+              <Statistic
+                title="Upcoming (tentative + confirmed)"
+                value={data?.upcoming_sessions ?? 0}
+              />
+              {data && data.upcoming_sessions > 0 && (
+                <Tag color="blue">Busy times ahead ✨</Tag>
+              )}
+            </Space>
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Funnel / tables */}
+      <Row gutter={[16, 16]}>
+        <Col xs={24} md={12}>
+          <Card title="Leads by stage" loading={loading}>
+            <Table
+              size="small"
+              pagination={false}
+              rowKey={(r) => r.stage}
+              dataSource={data?.leads_by_stage || []}
+              columns={leadsByStageColumns}
+              footer={
+                totalLeads
+                  ? () => (
+                      <span style={{ fontSize: 12 }}>
+                        Total: <strong>{totalLeads}</strong>
+                      </span>
+                    )
+                  : undefined
+              }
+            />
+            {data && data.leads_by_stage?.length > 0 && (
+              <div style={{ marginTop: 8, fontSize: 11, color: "#888" }}>
+                Top stage:{" "}
+                <strong>
+                  {
+                    pretty(
+                      data.leads_by_stage.reduce((top, s) =>
+                        s.count > top.count ? s : top
+                      ).stage
+                    )
+                  }
+                </strong>
+              </div>
+            )}
+          </Card>
+        </Col>
+
+        <Col xs={24} md={12}>
+          <Card title="Leads by source" loading={loading}>
+            <Table
+              size="small"
+              pagination={false}
+              rowKey={(_, idx) => String(idx)}
+              dataSource={data?.leads_by_source || []}
+              columns={leadsBySourceColumns}
+            />
+          </Card>
+        </Col>
+      </Row>
     </div>
   );
 };
