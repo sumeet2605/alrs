@@ -143,10 +143,17 @@ const PublicGalleryView: React.FC = () => {
         id
       )}/photos`;
       const headers: Record<string, string> = {};
-            if (OpenAPI.TOKEN) {
-              headers["Authorization"] = `Bearer ${OpenAPI.TOKEN}`;
-            }
-            const resp = await axios.get(url, { params: { page: p, per_page: perPage }, withCredentials: true, headers: headers });
+      // Try user auth token first
+      if (OpenAPI.TOKEN) {
+        headers["Authorization"] = `Bearer ${OpenAPI.TOKEN}`;
+      } else {
+        // Otherwise, try gallery access token from localStorage
+        const galleryToken = localStorage.getItem(`gallery_access_${id}`);
+        if (galleryToken) {
+          headers["Authorization"] = `Bearer ${galleryToken}`;
+        }
+      }
+      const resp = await axios.get(url, { params: { page: p, per_page: perPage }, withCredentials: true, headers: headers });
       const data = resp.data;
       // normalize response shape
       const list = Array.isArray(data)
@@ -238,13 +245,18 @@ const PublicGalleryView: React.FC = () => {
   const tryUnlock = async () => {
     if (!id) return;
     try {
-      await GalleryService.unlockGalleryEndpointApiGalleriesGalleryIdUnlockPost(id, {
+      const response = await GalleryService.unlockGalleryEndpointApiGalleriesGalleryIdUnlockPost(id, {
         password: passwordValue,
       });
+      // Store the token in localStorage for this gallery
+      const token = (response as any)?.token;
+      if (token) {
+        localStorage.setItem(`gallery_access_${id}`, token);
+      }
       setPasswordModalOpen(false);
       setPasswordValue("");
       message.success("Gallery unlocked");
-  await fetchPage(1);
+      await fetchPage(1);
       await loadFavorites();
     } catch (err: any) {
       const status = err?.response?.status ?? err?.status;

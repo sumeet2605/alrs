@@ -24,8 +24,7 @@ from app.tasks import enqueue_image_processing
 from app.gallery.utils.urls import url_from_path
 from app.gallery.utils.zip_gcs import signed_zip_url, ensure_zip_in_gcs, zip_key, stream_zip_from_gcs
 from app.settings import settings
-from datetime import timedelta
-from app.tz import now_ist, ensure_aware_in_ist
+from datetime import timedelta, datetime, timezone
 from dateutil import parser as dateutil_parser # type: ignore
 from app.gallery.utils.download_quota import check_and_reserve_download
 
@@ -241,11 +240,11 @@ def set_gallery_password_endpoint(gallery_id: str, payload: dict, db: Session = 
     
 
 @router.post("/galleries/{gallery_id}/unlock", status_code=200)
-def unlock_gallery_endpoint(gallery_id: str, body: dict, response: Response, db: Session = Depends(get_db)):
+def unlock_gallery_endpoint(gallery_id: str, body: dict, db: Session = Depends(get_db)):
     """
-    Client submits { "password": "..." }. If correct, server sets a short-lived cookie to allow access.
-    Returns {"ok": True} on success.
-    Cookie name: gallery_access_{gallery_id}
+    Client submits { "password": "..." }. If correct, server returns a short-lived token.
+    Client stores token in localStorage and includes it in Authorization header for subsequent requests.
+    Returns { "token": "...", "expires_in": seconds }
     """
     password = body.get("password") if isinstance(body, dict) else None
     if password is None:
@@ -258,36 +257,25 @@ def unlock_gallery_endpoint(gallery_id: str, body: dict, response: Response, db:
     # If gallery has expiry and it's in the past, deny
     expires_raw = getattr(gallery, "password_expires_at", None)
     if expires_raw is not None:
-        expires_dt = ensure_aware_in_ist(expires_raw)
-        if expires_dt is None or now_ist() > expires_dt:
+        exp_dt = expires_raw if getattr(expires_raw, "tzinfo", None) is not None else expires_raw.replace(tzinfo=timezone.utc)
+        if exp_dt is None or datetime.now(timezone.utc) > exp_dt:
             raise HTTPException(status_code=403, detail="Password has expired")
     
-    # compute cookie max_age: default token TTL (e.g. 1 hour) or until gallery expiry
+    # compute token TTL: default token TTL (e.g. 1 hour) or until gallery expiry
     default_ttl = getattr(config, "GALLERY_ACCESS_TOKEN_TTL", 60*60)  # seconds
     if expires_raw is not None:
-        expires_dt = ensure_aware_in_ist(expires_raw)
-        if expires_dt is None:
+        exp_dt = expires_raw if getattr(expires_raw, "tzinfo", None) is not None else expires_raw.replace(tzinfo=timezone.utc)
+        if exp_dt is None:
             raise HTTPException(status_code=403, detail="Password has expired")
-        seconds_until_gallery_expiry = int((expires_dt - now_ist()).total_seconds())
+        seconds_until_gallery_expiry = int((exp_dt - datetime.now(timezone.utc)).total_seconds())
         if seconds_until_gallery_expiry <= 0:
             raise HTTPException(status_code=403, detail="Password has expired")
-        cookie_ttl = min(default_ttl, seconds_until_gallery_expiry)
+        token_ttl = min(default_ttl, seconds_until_gallery_expiry)
     else:
-        cookie_ttl = default_ttl
-    # create signed short-lived token and set cookie
-    token = create_gallery_access_token(str(gallery_id), expires_minutes=int(cookie_ttl/60))
-    # print(token)
-    cookie_name = f"gallery_access_{gallery_id}"
-    # print(token)
-    # print(cookie_ttl)
-    response.set_cookie(cookie_name,
-                        token, 
-                        httponly=True, 
-                        max_age=cookie_ttl, 
-                        samesite=settings.SAMESITE, 
-                        secure=settings.SECURE,
-                        domain=None)
-    return {"ok": True}
+        token_ttl = default_ttl
+    # create signed short-lived token
+    token = create_gallery_access_token(str(gallery_id), expires_minutes=int(token_ttl/60))
+    return {"token": token, "expires_in": token_ttl}
 
 @router.get("/galleries/{gallery_id}/photos")
 def list_photos(
@@ -298,20 +286,25 @@ def list_photos(
     page: int = Query(1, ge=1),
     per_page: int = Query(10, ge=1, le=200),
 ):
-    # print(request.headers)
     gallery = crud.get_gallery(db, gallery_id)
     if not gallery:
         raise HTTPException(status_code=404, detail="Gallery not found")
     allowed = False
-    # print(user)
     if user:
         allowed = True
     else:
-        # print(request.cookies)
-        token = request.cookies.get(f"gallery_access_{gallery_id}")
-        # print(token)
-        if token and verify_gallery_access_token(token, gallery_id):
-            allowed = True
+        # Check for gallery access token in Authorization header (preferred)
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]  # Remove 'Bearer ' prefix
+            if token and verify_gallery_access_token(token, gallery_id):
+                allowed = True
+        
+        # Fallback to cookie for legacy support
+        if not allowed:
+            token = request.cookies.get(f"gallery_access_{gallery_id}")
+            if token and verify_gallery_access_token(token, gallery_id):
+                allowed = True
     
     if not allowed:
         raise HTTPException(status_code=401, detail="Unauthorized - gallery is password protected")
