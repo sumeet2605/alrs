@@ -17,6 +17,7 @@ from app.gallery.controllers import gallery_controller, favorites_controller
 from app import config
 from starlette.staticfiles import StaticFiles #type:ignore
 from app.brand import controllers as brand_controllers
+from app.api.admin_cleanup import router as cleanup_router
 
 load_dotenv()
 
@@ -53,3 +54,4 @@ app.include_router(admin_controller.router, prefix="/api")
 app.include_router(gallery_controller.router, prefix="/api")
 app.include_router(brand_controllers.router)
 app.include_router(favorites_controller.router)
+app.include_router(cleanup_router)
