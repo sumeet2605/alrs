@@ -5,22 +5,64 @@ from app.database import engine
 from app.gallery.models.gallery_model import Gallery
 from app.storage import storage
 
-EXPIRY_DAYS = 30
+REMINDER_BEFORE_DAYS = 3
+SOFT_EXPIRE_DAYS = 30
+HARD_DELETE_AFTER_DAYS = 7
 
 
 def cleanup_expired_galleries():
-    cutoff = datetime.utcnow() - timedelta(days=EXPIRY_DAYS)
+    now = datetime.utcnow()
+
+    reminder_start = now - timedelta(days=SOFT_EXPIRE_DAYS - REMINDER_BEFORE_DAYS)
+    reminder_end = now - timedelta(days=SOFT_EXPIRE_DAYS - REMINDER_BEFORE_DAYS - 1)
+
+    soft_cutoff = now - timedelta(days=SOFT_EXPIRE_DAYS)
+    hard_cutoff = now - timedelta(days=SOFT_EXPIRE_DAYS + HARD_DELETE_AFTER_DAYS)
+
+    result = {
+        "reminders": [],
+        "soft_expired": [],
+        "hard_deleted": []
+    }
 
     with Session(engine) as session:
-        statement = (
+
+        # 🔔 Day 27 reminder
+        reminder_galleries = session.exec(
             select(Gallery)
-            .where(Gallery.created_at < cutoff)
+            .where(Gallery.status == "active")
+            .where(Gallery.created_at >= reminder_start)
+            .where(Gallery.created_at < reminder_end)
+        ).all()
+
+        for gallery in reminder_galleries:
+            result["reminders"].append({
+                "id": gallery.id,
+                "title": gallery.title,
+                "owner_id": gallery.owner_id
+            })
+
+        # 🟡 Day 30 soft expire
+        to_soft_expire = session.exec(
+            select(Gallery)
+            .where(Gallery.status == "active")
+            .where(Gallery.created_at < soft_cutoff)
+        ).all()
+
+        for gallery in to_soft_expire:
+            gallery.status = "expired"
+            gallery.expired_at = now
+            result["soft_expired"].append(gallery.id)
+
+        # 🔴 Day 37 hard delete
+        to_delete = session.exec(
+            select(Gallery)
+            .where(Gallery.status == "expired")
+            .where(Gallery.created_at < hard_cutoff)
             .options(selectinload(Gallery.photos))
-        )
+        ).all()
 
-        expired_galleries = session.exec(statement).all()
-
-        for gallery in expired_galleries:
+        for gallery in to_delete:
             try:
                 for photo in gallery.photos:
                     if photo.path_original:
@@ -31,13 +73,14 @@ def cleanup_expired_galleries():
                         storage.delete(photo.path_thumb)
 
                 session.delete(gallery)
-                print(f"Deleted expired gallery: {gallery.id}")
+                result["hard_deleted"].append(gallery.id)
 
-            except Exception as e:
+            except Exception:
                 session.rollback()
-                print(f"Error deleting gallery {gallery.id}: {e}")
 
         session.commit()
+
+    return result
 
 
 if __name__ == "__main__":
