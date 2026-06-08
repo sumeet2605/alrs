@@ -23,5 +23,7 @@ def get_db():
         db.close()
 
 def init_db():
-    import app.auth.models  # Import your models here to register them with SQLAlchemy
+    import app.auth.models
+    import app.gallery.models.gallery_model
+    import app.whatsapp.models
     Base.metadata.create_all(bind=engine)
