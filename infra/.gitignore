@@ -1,4 +1,0 @@
-terraform.tfvars
-terraform.tfstate
-.terraform.locl.hcl
-.terraform/
