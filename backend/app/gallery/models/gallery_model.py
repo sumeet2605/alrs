@@ -5,8 +5,10 @@ from sqlalchemy.orm import relationship #type: ignore
 from app.database import Base #type: ignore
 import uuid
 
+
 def gen_uuid_str():
     return str(uuid.uuid4())
+
 
 class Gallery(Base):
     __tablename__ = "galleries"
@@ -20,6 +22,10 @@ class Gallery(Base):
     password_hash = Column(String(256), nullable=True)
     favorites_limit = Column(Integer, nullable=True)
 
+    # 🔥 Lifecycle management fields
+    status = Column(String(20), default="active", nullable=False)
+    expired_at = Column(TIMESTAMP(timezone=True), nullable=True)
+
     owner = relationship("User", back_populates="galleries")
     photos = relationship("Photo", back_populates="gallery", cascade="all, delete-orphan", order_by="Photo.order_index")
 
@@ -27,7 +33,7 @@ class Gallery(Base):
 class Photo(Base):
     __tablename__ = "photos"
     id = Column(Integer, primary_key=True, index=True)
-    file_id = Column(String(36), unique=True, nullable=False, default=gen_uuid_str)  # NEW column
+    file_id = Column(String(36), unique=True, nullable=False, default=gen_uuid_str)
     gallery_id = Column(Integer, ForeignKey("galleries.id", ondelete="CASCADE"), index=True, nullable=False)
     filename = Column(String(512), nullable=False)
     ext = Column(String(10), nullable=False)
@@ -49,5 +55,5 @@ class Branding(Base):
     owner_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False)
     logo_path = Column(String(1024), nullable=True)
     watermark_path = Column(String(1024), nullable=True)
-    watermark_opacity = Column(Integer, default=40)  # store as percent (0-100)
-    watermark_scale = Column(Integer, default=20)    # percent
+    watermark_opacity = Column(Integer, default=40)
+    watermark_scale = Column(Integer, default=20)
