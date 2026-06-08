@@ -19,6 +19,7 @@ from starlette.staticfiles import StaticFiles #type:ignore
 from app.brand import controllers as brand_controllers
 from app.api.admin_cleanup import router as cleanup_router
 from app.api.whatsapp_webhook import router as whatsapp_router
+from app.api.whatsapp_admin import router as whatsapp_admin_router
 
 load_dotenv()
 
@@ -57,3 +58,4 @@ app.include_router(brand_controllers.router)
 app.include_router(favorites_controller.router)
 app.include_router(cleanup_router)
 app.include_router(whatsapp_router)
+app.include_router(whatsapp_admin_router)
