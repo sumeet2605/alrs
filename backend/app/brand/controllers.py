@@ -17,9 +17,6 @@ def read_brand(db: Session = Depends(get_db)):
 
     return {
         "logo_path": s.logo_path,
-        "watermark_path": s.watermark_path,
-        "watermark_opacity": s.watermark_opacity,
-        "watermark_scale": s.watermark_scale,
         "primary_color": s.primary_color,
         "secondary_color": s.secondary_color,
         "accent_color": s.accent_color,
@@ -36,8 +33,6 @@ def write_brand(payload: dict, db: Session = Depends(get_db)):
         "accent_color",
         "font_family",
         "theme_mode",
-        "watermark_opacity",
-        "watermark_scale",
     }
 
     clean_payload = {k: v for k, v in payload.items() if k in allowed_fields}
@@ -50,8 +45,6 @@ def write_brand(payload: dict, db: Session = Depends(get_db)):
         "accent_color": s.accent_color,
         "font_family": s.font_family,
         "theme_mode": s.theme_mode,
-        "watermark_opacity": s.watermark_opacity,
-        "watermark_scale": s.watermark_scale,
     }
 
 
