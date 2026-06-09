@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Request, HTTPException
 from app.database import SessionLocal
 from app.whatsapp.models import WhatsAppMessage
+from app.leads.models.lead_model import Lead, LeadStage
 import os
 
 router = APIRouter()
@@ -35,14 +36,28 @@ async def receive_message(request: Request):
                 # Incoming messages
                 messages = value.get("messages", [])
                 for msg in messages:
+                    phone = msg.get("from")
+
+                    # 🔥 Auto-create lead if not exists
+                    lead = db.query(Lead).filter(Lead.phone_number == phone).first()
+                    if not lead:
+                        lead = Lead(
+                            phone_number=phone,
+                            source="whatsapp",
+                            stage=LeadStage.NEW
+                        )
+                        db.add(lead)
+                        db.flush()  # get lead.id
+
                     db.add(WhatsAppMessage(
                         wa_message_id=msg.get("id"),
-                        from_number=msg.get("from"),
+                        from_number=phone,
                         to_number=value.get("metadata", {}).get("display_phone_number"),
                         direction="incoming",
                         message_type=msg.get("type"),
                         message_text=msg.get("text", {}).get("body"),
-                        raw_payload=payload
+                        raw_payload=payload,
+                        lead_id=lead.id
                     ))
 
                 # Status updates
