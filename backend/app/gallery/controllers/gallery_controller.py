@@ -1,5 +1,6 @@
 # backend/app/routes/galleries.py
 from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPException, status, Response, Request
+from fastapi.responses import StreamingResponse
 from typing import List
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -8,17 +9,15 @@ import shutil
 import os
 import uuid
 from pathlib import Path
-import zipfile
-import tempfile
 
 from app.gallery.schemas.gallery_schema import GalleryCreate
 from app.gallery.models.gallery_model import Gallery, Photo
 from app.gallery.services import gallery_service as crud
+from app.gallery.services.gallery_download_service import stream_gallery_zip
 from app.auth.services.dependencies import get_current_user, get_optional_current_user
 from app.gallery.utils.tokens import create_gallery_access_token, verify_gallery_access_token
 
 router = APIRouter(tags=["Gallery"])
-
 
 # ========================
 # Gallery CRUD
@@ -43,7 +42,7 @@ def list_galleries(db: Session = Depends(get_db), user=Depends(get_current_user)
 
 
 # ========================
-# Upload Logic
+# Upload Logic (disk-based until full migration)
 # ========================
 
 def save_upload_fileobj(upload_file: UploadFile, dest: Path):
@@ -218,57 +217,7 @@ def list_photos(gallery_id: str, request: Request, db: Session = Depends(get_db)
 
 
 # ========================
-# Delete Photo
-# ========================
-
-@router.delete("/galleries/{gallery_id}/photos/{photo_id}")
-def delete_photo(gallery_id: str, photo_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    photo = db.query(Photo).filter(Photo.id == photo_id, Photo.gallery_id == gallery_id).first()
-    if not photo:
-        raise HTTPException(status_code=404, detail="Photo not found")
-
-    # Convert stored /media/... path to absolute path
-    for rel_path in [photo.path_original, photo.path_preview, photo.path_thumb]:
-        if rel_path and rel_path.startswith("/media/"):
-            abs_path = Path(config.MEDIA_ROOT) / rel_path.replace("/media/", "")
-            if abs_path.exists():
-                try:
-                    abs_path.unlink()
-                except Exception:
-                    pass
-
-    db.delete(photo)
-    db.commit()
-    return {"detail": "Photo deleted"}
-
-
-# ========================
-# Set Cover
-# ========================
-
-@router.post("/galleries/{gallery_id}/photos/{photo_id}/cover")
-def set_photo_as_cover(gallery_id: str, photo_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    gallery = db.query(Gallery).filter(Gallery.id == gallery_id).first()
-    if not gallery:
-        raise HTTPException(status_code=404, detail="Gallery not found")
-    if gallery.owner_id != user.id:
-        raise HTTPException(status_code=403, detail="Not allowed")
-
-    photo = db.query(Photo).filter(Photo.id == photo_id, Photo.gallery_id == gallery_id).first()
-    if not photo:
-        raise HTTPException(status_code=404, detail="Photo not found")
-
-    db.query(Photo).filter(Photo.gallery_id == gallery_id, Photo.is_cover == True).update({"is_cover": False})
-    db.commit()
-
-    photo.is_cover = True
-    db.commit()
-
-    return {"detail": "Cover set", "photo_id": photo.id}
-
-
-# ========================
-# Download Gallery (Zip)
+# Download Gallery (Streaming)
 # ========================
 
 @router.get("/galleries/{gallery_id}/download")
@@ -290,17 +239,14 @@ def download_gallery_route(gallery_id: str, request: Request, db: Session = Depe
     if not allowed:
         raise HTTPException(status_code=401, detail="Unauthorized")
 
-    photos = crud.list_photos(db, gallery_id)
+    prefix = f"galleries/{gallery_id}/"
 
-    temp_dir = tempfile.mkdtemp()
-    zip_path = Path(temp_dir) / f"gallery_{gallery_id}.zip"
+    zip_stream = stream_gallery_zip(prefix)
 
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
-        for p in photos:
-            if p.path_original and p.path_original.startswith("/media/"):
-                abs_path = Path(config.MEDIA_ROOT) / p.path_original.replace("/media/", "")
-                if abs_path.exists():
-                    zipf.write(abs_path, arcname=p.filename)
-
-    from fastapi.responses import FileResponse
-    return FileResponse(zip_path, filename=f"gallery_{gallery_id}.zip")
+    return StreamingResponse(
+        zip_stream,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="gallery_{gallery_id}.zip"'
+        }
+    )
