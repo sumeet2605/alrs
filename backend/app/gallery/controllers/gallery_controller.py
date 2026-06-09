@@ -216,6 +216,41 @@ def list_photos(gallery_id: str, request: Request, db: Session = Depends(get_db)
     return {"photos": out}
 
 
+@router.delete("/galleries/{gallery_id}/photos/{photo_id}")
+def delete_photo(
+    gallery_id: str,
+    photo_id: str,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    photo = db.query(Photo).filter(
+        Photo.id == photo_id,
+        Photo.gallery_id == gallery_id
+    ).first()
+
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+
+    # Ownership check
+    gallery = db.query(Gallery).filter(Gallery.id == gallery_id).first()
+    if not gallery or gallery.owner_id != user.id:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    # Convert /media/... → storage key
+    for path in [photo.path_original, photo.path_preview, photo.path_thumb]:
+        if path and path.startswith("/media/"):
+            key = path.replace("/media/", "")
+            from app.storage import storage
+            try:
+                storage.delete(key)
+            except Exception:
+                pass
+
+    db.delete(photo)
+    db.commit()
+
+    return {"detail": "Photo deleted"}
+
 # ========================
 # Download Gallery (Streaming)
 # ========================
