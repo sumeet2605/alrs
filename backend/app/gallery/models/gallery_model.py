@@ -22,7 +22,7 @@ class Gallery(Base):
     password_hash = Column(String(256), nullable=True)
     favorites_limit = Column(Integer, nullable=True)
 
-    # 🔥 Lifecycle management fields
+    # Lifecycle management fields
     status = Column(String(20), default="active", nullable=False)
     expired_at = Column(TIMESTAMP(timezone=True), nullable=True)
 
@@ -38,8 +38,6 @@ class Photo(Base):
     filename = Column(String(512), nullable=False)
     ext = Column(String(10), nullable=False)
     path_original = Column(String(1024), nullable=False)
-    path_preview = Column(String(1024), nullable=True)
-    path_thumb = Column(String(1024), nullable=True)
     width = Column(Integer, nullable=True)
     height = Column(Integer, nullable=True)
     uploaded_at = Column(TIMESTAMP, server_default=func.now())
