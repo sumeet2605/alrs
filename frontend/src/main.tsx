@@ -6,6 +6,7 @@ import { ConfigProvider, theme as antdTheme, App as AntdApp } from "antd";
 import "antd/dist/reset.css";
 import { AuthProvider } from "./contexts/AuthContext";
 import { ThemeProvider as MuiThemeProvider, createTheme } from "@mui/material/styles";
+import { BrandingProvider } from "./context/BrandingContext";
 
 type ThemeContextType = { darkMode: boolean; toggleTheme: () => void; };
 export const ThemeContext = createContext<ThemeContextType>({ darkMode: false, toggleTheme: () => {} });
@@ -31,7 +32,9 @@ function RootApp() {
         <AntdApp>
           <MuiThemeProvider theme={muiTheme}>
             <AuthProvider>
-              <App />
+              <BrandingProvider>
+                <App />
+              </BrandingProvider>
             </AuthProvider>
           </MuiThemeProvider>
         </AntdApp>
