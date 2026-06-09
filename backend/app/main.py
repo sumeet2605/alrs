@@ -21,6 +21,11 @@ from app.api.admin_cleanup import router as cleanup_router
 from app.api.whatsapp_webhook import router as whatsapp_router
 from app.api.whatsapp_admin import router as whatsapp_admin_router
 
+from fastapi.staticfiles import StaticFiles
+from app import config
+
+
+
 load_dotenv()
 
 
@@ -35,6 +40,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.mount("/media", StaticFiles(directory=config.MEDIA_ROOT), name="media")
 
 app.state.limiter = limiter
 
