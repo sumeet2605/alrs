@@ -16,3 +16,4 @@ pillow
 aiofiles
 psycopg2-binary
 boto3
+zipstream-new
