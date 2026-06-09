@@ -3,27 +3,68 @@ from fastapi import APIRouter, Depends, UploadFile, File, HTTPException #type: i
 from sqlalchemy.orm import Session #type: ignore
 from app.database import get_db
 from .service import get_settings, update_settings
-from app import config
-from pathlib import Path
-import shutil, os
 from app.storage import storage
+import os
 
 router = APIRouter(prefix="/api/brand", tags=["Brand"])
 
+
 @router.get("")
 def read_brand(db: Session = Depends(get_db)):
-    return get_settings(db).__dict__
+    s = get_settings(db)
+    if not s:
+        return {}
+
+    return {
+        "logo_path": s.logo_path,
+        "watermark_path": s.watermark_path,
+        "watermark_opacity": s.watermark_opacity,
+        "watermark_scale": s.watermark_scale,
+        "primary_color": s.primary_color,
+        "secondary_color": s.secondary_color,
+        "accent_color": s.accent_color,
+        "font_family": s.font_family,
+        "theme_mode": s.theme_mode,
+    }
+
 
 @router.put("")
 def write_brand(payload: dict, db: Session = Depends(get_db)):
-    return update_settings(db, payload).__dict__
+    allowed_fields = {
+        "primary_color",
+        "secondary_color",
+        "accent_color",
+        "font_family",
+        "theme_mode",
+        "watermark_opacity",
+        "watermark_scale",
+    }
+
+    clean_payload = {k: v for k, v in payload.items() if k in allowed_fields}
+
+    s = update_settings(db, clean_payload)
+
+    return {
+        "primary_color": s.primary_color,
+        "secondary_color": s.secondary_color,
+        "accent_color": s.accent_color,
+        "font_family": s.font_family,
+        "theme_mode": s.theme_mode,
+        "watermark_opacity": s.watermark_opacity,
+        "watermark_scale": s.watermark_scale,
+    }
+
 
 @router.post("/logo", status_code=201)
 async def upload_logo(file: UploadFile = File(...), db: Session = Depends(get_db)):
     ext = os.path.splitext(file.filename)[1].lower() or ".png"
-    gcs_blob_name = f"brand/logo{ext}"
+    key = f"branding/logo{ext}"
+
     await file.seek(0)
-    storage.save_fileobj(file.file, gcs_blob_name)
-    dest = f"gs://{config.GCS_BUCKET_NAME}/{gcs_blob_name}"
-    s = update_settings(db, {"logo_path": dest})
-    return {"logo_url": s.logo_path}
+    storage.save_fileobj(file.file, key)
+
+    s = update_settings(db, {"logo_path": key})
+
+    return {
+        "logo_url": storage.url_for(key)
+    }
