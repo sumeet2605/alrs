@@ -64,17 +64,13 @@ def get_galleries_for_owner_with_cover(db: Session, owner_id: str) -> List[model
                 "file_id": getattr(cover, "file_id", None),
                 "filename": cover.filename,
                 "path_original": (cover.path_original),
-                "path_preview": (cover.path_preview),
-                "path_thumb": (cover.path_thumb),
                 "width": cover.width,
                 "height": cover.height,
                 "is_cover": bool(cover.is_cover),
             }
             # Prefer thumb -> preview -> original (converted to web path)
             cover_url = (
-                url_from_path(cover.path_thumb)
-                or url_from_path(cover.path_preview)
-                or url_from_path(cover.path_original)
+                url_from_path(cover.path_original)
             )
 
         # Build gallery dict. If crud returned ORM objects, convert essential fields.
