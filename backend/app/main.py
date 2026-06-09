@@ -1,35 +1,27 @@
 # main.py
-from fastapi import FastAPI # type: ignore
-from fastapi.middleware.cors import CORSMiddleware # type: ignore
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from app.database import get_db, init_db
 from app.auth.controllers import user_controller, auth_controller, admin_controller
 from app.auth.services.user_service import create_super_admin
 from os import getenv
-from dotenv import load_dotenv # type: ignore
-from slowapi import Limiter # type: ignore
-from slowapi.util import get_remote_address # type: ignore
-from starlette.middleware import Middleware # type: ignore
-from slowapi.middleware import SlowAPIMiddleware # type: ignore
-from slowapi.errors import RateLimitExceeded # type: ignore
-from fastapi.responses import JSONResponse # type: ignore
+from dotenv import load_dotenv
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from starlette.middleware import Middleware
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.errors import RateLimitExceeded
+from fastapi.responses import JSONResponse
 from app.rate_limiter import limiter
 from app.gallery.controllers import gallery_controller, favorites_controller
 from app import config
-from starlette.staticfiles import StaticFiles #type:ignore
-from app.brand import controllers as brand_controllers
+from starlette.staticfiles import StaticFiles
 from app.api.admin_cleanup import router as cleanup_router
 from app.api.whatsapp_webhook import router as whatsapp_router
 from app.api.whatsapp_admin import router as whatsapp_admin_router
 
-from fastapi.staticfiles import StaticFiles
-from app import config
-
-
-
 load_dotenv()
 
-
-# The 'lifespan=lifespan' parameter is the critical fix.
 app = FastAPI(title="Alluring Lens Studios API", version="1.0.0")
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(
@@ -60,7 +52,6 @@ app.include_router(user_controller.router, prefix="/api")
 app.include_router(auth_controller.router, prefix="/api") 
 app.include_router(admin_controller.router, prefix="/api")
 app.include_router(gallery_controller.router, prefix="/api")
-app.include_router(brand_controllers.router)
 app.include_router(favorites_controller.router)
 app.include_router(cleanup_router)
 app.include_router(whatsapp_router)
