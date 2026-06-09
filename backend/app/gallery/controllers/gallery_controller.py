@@ -1,14 +1,11 @@
 # backend/app/routes/galleries.py
-from fastapi import APIRouter, UploadFile, File, BackgroundTasks, Depends, HTTPException, status, Response, Request
+from fastapi import APIRouter, UploadFile, File, Depends, HTTPException, status, Response, Request
 from fastapi.responses import StreamingResponse
 from typing import List
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app import config, images
-import shutil
 import os
 import uuid
-from pathlib import Path
 
 from app.gallery.schemas.gallery_schema import GalleryCreate
 from app.gallery.models.gallery_model import Gallery, Photo
@@ -16,6 +13,7 @@ from app.gallery.services import gallery_service as crud
 from app.gallery.services.gallery_download_service import stream_gallery_zip
 from app.auth.services.dependencies import get_current_user, get_optional_current_user
 from app.gallery.utils.tokens import create_gallery_access_token, verify_gallery_access_token
+from app.storage import storage
 
 router = APIRouter(tags=["Gallery"])
 
@@ -42,96 +40,41 @@ def list_galleries(db: Session = Depends(get_db), user=Depends(get_current_user)
 
 
 # ========================
-# Upload Logic (disk-based until full migration)
+# Upload Logic (Storage Abstraction)
 # ========================
-
-def save_upload_fileobj(upload_file: UploadFile, dest: Path):
-    dest.parent.mkdir(parents=True, exist_ok=True)
-    with open(dest, "wb") as buffer:
-        shutil.copyfileobj(upload_file.file, buffer)
-
-
-def process_image_pipeline(photo_file_id: str, original_abs_path: str, owner_id: str, gallery_id: str):
-    from app.database import SessionLocal
-
-    db = SessionLocal()
-    try:
-        owner_dir = Path(config.MEDIA_ROOT) / owner_id / gallery_id
-        previews_dir = owner_dir / "previews"
-        thumbs_dir = owner_dir / "thumbs"
-        previews_dir.mkdir(parents=True, exist_ok=True)
-        thumbs_dir.mkdir(parents=True, exist_ok=True)
-
-        preview_abs_path = str(previews_dir / f"{photo_file_id}.jpg")
-        thumb_abs_path = str(thumbs_dir / f"{photo_file_id}.jpg")
-
-        images.make_preview(original_abs_path, preview_abs_path, config.IMAGE_SIZES["preview"])
-        images.make_thumb(original_abs_path, thumb_abs_path, config.IMAGE_SIZES["thumb"])
-
-        rel_preview = f"/media/{owner_id}/{gallery_id}/previews/{photo_file_id}.jpg"
-        rel_thumb = f"/media/{owner_id}/{gallery_id}/thumbs/{photo_file_id}.jpg"
-
-        p = db.query(Photo).filter(Photo.file_id == photo_file_id).first()
-        if p:
-            p.path_preview = rel_preview
-            p.path_thumb = rel_thumb
-            db.commit()
-    finally:
-        db.close()
-
 
 @router.post("/galleries/{gallery_id}/photos", status_code=201)
 async def upload_photos(
-    background_tasks: BackgroundTasks,
     gallery_id: str,
     files: List[UploadFile] = File(...),
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
     created = []
-    owner_id_str = str(user.id)
-    gallery_id_str = str(gallery_id)
-
-    owner_dir = Path(config.MEDIA_ROOT) / owner_id_str / gallery_id_str
-    originals_dir = owner_dir / "originals"
-    originals_dir.mkdir(parents=True, exist_ok=True)
 
     for upload in files:
-        ext = os.path.splitext(upload.filename)[1].lower()
-        if not ext:
-            ext = ".jpg"
-
+        ext = os.path.splitext(upload.filename)[1].lower() or ".jpg"
         file_id = str(uuid.uuid4())
-        dest_original_path = originals_dir / f"{file_id}{ext}"
-        dest_original_abs = str(dest_original_path)
 
-        save_upload_fileobj(upload, dest_original_path)
+        key_original = f"galleries/{gallery_id}/originals/{file_id}{ext}"
 
-        rel_path_original = f"/media/{owner_id_str}/{gallery_id_str}/originals/{file_id}{ext}"
+        storage.save_fileobj(upload.file, key_original)
 
         p = crud.create_photo(
             db,
-            gallery_id=gallery_id_str,
+            gallery_id=gallery_id,
             filename=upload.filename,
             ext=ext,
-            path_original=rel_path_original,
+            path_original=key_original,
             file_id=file_id,
-        )
-
-        background_tasks.add_task(
-            process_image_pipeline,
-            p.file_id,
-            dest_original_abs,
-            owner_id_str,
-            gallery_id_str,
         )
 
         created.append(
             {
-                "id": p.id,
+                "id": str(p.id),
                 "file_id": p.file_id,
                 "filename": p.filename,
-                "path_original": p.path_original,
+                "url_original": storage.url_for(key_original),
             }
         )
 
@@ -202,11 +145,9 @@ def list_photos(gallery_id: str, request: Request, db: Session = Depends(get_db)
         out.append(
             {
                 "id": str(p.id),
-                "file_id": getattr(p, "file_id", None),
+                "file_id": p.file_id,
                 "filename": p.filename,
-                "path_original": p.path_original,
-                "path_preview": p.path_preview,
-                "path_thumb": p.path_thumb,
+                "url_original": storage.url_for(p.path_original),
                 "width": p.width,
                 "height": p.height,
                 "order_index": p.order_index,
@@ -231,16 +172,12 @@ def delete_photo(
     if not photo:
         raise HTTPException(status_code=404, detail="Photo not found")
 
-    # Ownership check
     gallery = db.query(Gallery).filter(Gallery.id == gallery_id).first()
     if not gallery or gallery.owner_id != user.id:
         raise HTTPException(status_code=403, detail="Not allowed")
 
-    # Convert /media/... → storage key
-    for path in [photo.path_original, photo.path_preview, photo.path_thumb]:
-        if path and path.startswith("/media/"):
-            key = path.replace("/media/", "")
-            from app.storage import storage
+    for key in [photo.path_original, photo.path_preview, photo.path_thumb]:
+        if key:
             try:
                 storage.delete(key)
             except Exception:
@@ -250,6 +187,7 @@ def delete_photo(
     db.commit()
 
     return {"detail": "Photo deleted"}
+
 
 # ========================
 # Download Gallery (Streaming)
@@ -275,7 +213,6 @@ def download_gallery_route(gallery_id: str, request: Request, db: Session = Depe
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     prefix = f"galleries/{gallery_id}/"
-
     zip_stream = stream_gallery_zip(prefix)
 
     return StreamingResponse(
