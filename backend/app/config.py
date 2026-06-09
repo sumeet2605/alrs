@@ -20,6 +20,8 @@ GCS_SIGNED_URL_EXP_SECONDS = int(os.getenv("GCS_SIGNED_URL_EXP_SECONDS", "3600")
 GCS_CREDENTIALS_JSON = os.getenv("GCS_CREDENTIALS_JSON", "")
 GCP_PROJECT_ID = os.getenv("GCP_PROJECT_ID")
 
+MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", "./media"))
+
 # --- DigitalOcean Spaces (S3-compatible) ---
 SPACES_BUCKET = os.getenv("SPACES_BUCKET", "")
 SPACES_REGION = os.getenv("SPACES_REGION", "")

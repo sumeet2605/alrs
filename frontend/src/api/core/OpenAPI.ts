@@ -6,7 +6,9 @@ import type { ApiRequestOptions } from './ApiRequestOptions';
 
 type Resolver<T> = (options: ApiRequestOptions) => Promise<T>;
 type Headers = Record<string, string>;
-
+console.log(import.meta.env.VITE_API_BASE);
+const API_BASE = import.meta.env.VITE_API_BASE;
+console.log(API_BASE);
 export type OpenAPIConfig = {
     BASE: string;
     VERSION: string;
@@ -20,7 +22,7 @@ export type OpenAPIConfig = {
 };
 
 export const OpenAPI: OpenAPIConfig = {
-    BASE: 'https://alrs-backend-412832979617.asia-south1.run.app',
+    BASE: API_BASE,
     VERSION: '1.0.0',
     WITH_CREDENTIALS: true,
     CREDENTIALS: 'include',
