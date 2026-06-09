@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, TIMESTAMP, Text, JSON
+from sqlalchemy import Column, Integer, String, TIMESTAMP, Text, JSON, ForeignKey
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -15,4 +15,7 @@ class WhatsAppMessage(Base):
     message_text = Column(Text, nullable=True)
     status = Column(String(20), nullable=True)
     raw_payload = Column(JSON)
+
+    lead_id = Column(String, ForeignKey("leads.id"), nullable=True)
+
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
