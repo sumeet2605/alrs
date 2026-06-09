@@ -22,8 +22,10 @@ def get_db():
     finally:
         db.close()
 
+
 def init_db():
     import app.auth.models
     import app.gallery.models.gallery_model
     import app.whatsapp.models
+    import app.leads.models.lead_model
     Base.metadata.create_all(bind=engine)
