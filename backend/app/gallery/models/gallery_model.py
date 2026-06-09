@@ -55,3 +55,10 @@ class Branding(Base):
     watermark_path = Column(String(1024), nullable=True)
     watermark_opacity = Column(Integer, default=40)
     watermark_scale = Column(Integer, default=20)
+
+    # Theme customization fields (Owner-level branding)
+    primary_color = Column(String(20), nullable=True)
+    secondary_color = Column(String(20), nullable=True)
+    accent_color = Column(String(20), nullable=True)
+    font_family = Column(String(100), nullable=True)
+    theme_mode = Column(String(20), default="pastel")
