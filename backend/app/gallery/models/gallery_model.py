@@ -33,7 +33,7 @@ class Gallery(Base):
 class Photo(Base):
     __tablename__ = "photos"
     id = Column(Integer, primary_key=True, index=True)
-    file_id = Column(String(36), unique=True, nullable=False, default=gen_uuid_str)
+    file_id = Column(String(36), unique=True, default=gen_uuid_str)
     gallery_id = Column(Integer, ForeignKey("galleries.id", ondelete="CASCADE"), index=True, nullable=False)
     filename = Column(String(512), nullable=False)
     ext = Column(String(10), nullable=False)
