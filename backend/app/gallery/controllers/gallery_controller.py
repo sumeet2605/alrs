@@ -40,7 +40,7 @@ def list_galleries(db: Session = Depends(get_db), user=Depends(get_current_user)
 
 
 # ========================
-# Upload Logic (Storage Abstraction)
+# Upload Logic (Original Only)
 # ========================
 
 @router.post("/galleries/{gallery_id}/photos", status_code=201)
@@ -74,7 +74,7 @@ async def upload_photos(
                 "id": str(p.id),
                 "file_id": p.file_id,
                 "filename": p.filename,
-                "url_original": storage.url_for(key_original),
+                "path_original": storage.url_for(key_original),
             }
         )
 
@@ -147,7 +147,7 @@ def list_photos(gallery_id: str, request: Request, db: Session = Depends(get_db)
                 "id": str(p.id),
                 "file_id": p.file_id,
                 "filename": p.filename,
-                "url_original": storage.url_for(p.path_original),
+                "path_original": storage.url_for(p.path_original),
                 "width": p.width,
                 "height": p.height,
                 "order_index": p.order_index,
@@ -176,12 +176,11 @@ def delete_photo(
     if not gallery or gallery.owner_id != user.id:
         raise HTTPException(status_code=403, detail="Not allowed")
 
-    for key in [photo.path_original, photo.path_preview, photo.path_thumb]:
-        if key:
-            try:
-                storage.delete(key)
-            except Exception:
-                pass
+    if photo.path_original:
+        try:
+            storage.delete(photo.path_original)
+        except Exception:
+            pass
 
     db.delete(photo)
     db.commit()
